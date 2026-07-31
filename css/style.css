@@ -1,8 +1,4 @@
-/* ============================================================
-   AIIR IAQ Smart Dashboard – style.css
-   Design System: Clean Light Mode Default + Dark Mode Option
-   Palette: Primary #0D9488 (Teal), Secondary #0284C7 (Azure), Tertiary #C36D4B (Terracotta), Neutral #737877
-   ============================================================ */
+/* AIIR IAQ Smart Dashboard – style.css */
 
 /* ---- Google Font ---- */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -99,9 +95,7 @@ body {
   transition: background var(--transition), color var(--transition);
 }
 
-/* ============================================================
-   SIDEBAR
-   ============================================================ */
+/* Sidebar */
 .sidebar {
   position: fixed;
   top: 0; left: 0; bottom: 0;
@@ -376,9 +370,7 @@ body.sidebar-collapsed .main-content {
   backdrop-filter: blur(2px);
 }
 
-/* ============================================================
-   MAIN CONTENT
-   ============================================================ */
+/* Main content layout */
 .main-content {
   margin-left: var(--sidebar-w);
   min-height: 100vh;
@@ -429,9 +421,7 @@ body.sidebar-collapsed .main-content {
   letter-spacing: 0.03em;
 }
 
-/* ============================================================
-   WELCOME SCREEN
-   ============================================================ */
+/* Welcome screen */
 .welcome-screen {
   display: flex;
   flex-direction: column;
@@ -474,9 +464,7 @@ body.sidebar-collapsed .main-content {
   50%       { border-color: rgba(13, 148, 136, 0.7); }
 }
 
-/* ============================================================
-   HERO HEADER
-   ============================================================ */
+/* Hero header */
 .hero-header {
   background: var(--glass-bg);
   border: 1px solid var(--border);
@@ -524,9 +512,7 @@ body.sidebar-collapsed .main-content {
 }
 .btn-refresh.spinning #refreshIcon { animation: spin 0.6s linear infinite; display: inline-block; }
 
-/* ============================================================
-   TABS
-   ============================================================ */
+/* Navigation tabs */
 .tabs-container { animation: fadeInUp 0.6s ease 0.1s both; }
 
 .tab-list {
@@ -560,9 +546,7 @@ body.sidebar-collapsed .main-content {
 .tab-panel { display: none; }
 .tab-panel.active { display: block; animation: fadeInUp 0.35s ease; }
 
-/* ============================================================
-   SECTION HEADER
-   ============================================================ */
+/* Section header */
 .section-header {
   color: var(--text);
   font-size: 1rem;
@@ -572,9 +556,7 @@ body.sidebar-collapsed .main-content {
   margin-bottom: 20px;
 }
 
-/* ============================================================
-   GLASS PANEL / CARD
-   ============================================================ */
+/* Glass panel card */
 .glass-panel {
   background: var(--card-bg);
   border: 1px solid var(--border);
@@ -586,9 +568,7 @@ body.sidebar-collapsed .main-content {
 }
 .glass-panel:hover { border-color: var(--border-hover); box-shadow: var(--shadow-md); }
 
-/* ============================================================
-   SITES GRID (Overview Tab)
-   ============================================================ */
+/* Sites grid (overview tab) */
 .sites-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -673,9 +653,7 @@ body.sidebar-collapsed .main-content {
 }
 .empty-icon { font-size: 3rem; opacity: 0.5; }
 
-/* ============================================================
-   DATA TABLE
-   ============================================================ */
+/* Data table */
 .table-wrap { overflow-x: auto; }
 .data-table {
   width: 100%;
@@ -727,9 +705,7 @@ body.sidebar-collapsed .main-content {
   box-shadow: 0 6px 16px rgba(195, 109, 75, 0.35);
 }
 
-/* ============================================================
-   METRICS GRID (Site4 Tab - 7 Cards Auto-Fit)
-   ============================================================ */
+/* Metrics grid */
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -797,9 +773,7 @@ body.sidebar-collapsed .main-content {
 .metric-status.bad   { color: var(--tertiary); }
 .metric-status.info  { color: var(--secondary); }
 
-/* ============================================================
-   GAUGES
-   ============================================================ */
+/* Gauges */
 .gauges-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -813,9 +787,7 @@ body.sidebar-collapsed .main-content {
   display: block;
 }
 
-/* ============================================================
-   COMMAND CARDS
-   ============================================================ */
+/* Command cards */
 .cmd-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -849,17 +821,13 @@ body.sidebar-collapsed .main-content {
   color: var(--text);
 }
 
-/* ============================================================
-   CHART
-   ============================================================ */
+/* Trend chart */
 .chart-wrap {
   position: relative;
   height: 300px;
 }
 
-/* ============================================================
-   TOAST
-   ============================================================ */
+/* Toast notification */
 .toast {
   position: fixed;
   bottom: 28px;
@@ -895,25 +863,19 @@ body.sidebar-collapsed .main-content {
   box-shadow: 0 8px 24px rgba(2, 132, 199, 0.3);
 }
 
-/* ============================================================
-   ANIMATIONS
-   ============================================================ */
+/* Animations */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(18px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ============================================================
-   SCROLLBAR
-   ============================================================ */
+/* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: var(--input-bg); }
 ::-webkit-scrollbar-thumb { background: var(--neutral); border-radius: 8px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
 
-/* ============================================================
-   RESPONSIVE
-   ============================================================ */
+/* Responsive adjustments */
 @media (max-width: 1100px) {
   .metrics-grid { grid-template-columns: repeat(3, 1fr); }
 }

@@ -1,34 +1,22 @@
 /**
  * app.js — AIIR IAQ Smart Dashboard
- * Full business logic: API proxy via PHP backend (or demo mode),
- * login, auto-refresh, metric rendering, gauge charts, trend chart,
- * control recommendations, CSV export.
- *
- * Architecture mirrors the original Streamlit app:
- *   - api.py        → ApiService class
- *   - ui_components.py → renderMetrics(), drawGauge(), renderControlCards()
- *   - all_sites.py  → renderOverview()
- *   - site_detail.py→ renderSiteDetail()
- *   - sidebar.py    → handleLogin(), toggleAutoRefresh()
+ * Business logic: API proxy via PHP backend, login, auto-refresh,
+ * metric rendering, gauge charts, trend chart, control recommendations, CSV export.
  */
 
 'use strict';
 
-/* ============================================================
-   CONFIGURATION
-   ============================================================ */
+// App configuration
 const CONFIG = {
-  loginUrl:       'proxy.php?action=login',
-  siteDataUrl:    'proxy.php?action=getSiteData',
-  specDataUrl:    'proxy.php?action=getSpecData',
-  demoMode:       false,  // false = ใช้ข้อมูลจริงจาก AIIR API ผ่าน proxy.php
-  autoRefreshMs:  30000,
+  loginUrl: 'proxy.php?action=login',
+  siteDataUrl: 'proxy.php?action=getSiteData',
+  specDataUrl: 'proxy.php?action=getSpecData',
+  demoMode: false,  // false = ใช้ข้อมูลจริงจาก AIIR API ผ่าน proxy.php
+  autoRefreshMs: 30000,
   trendMaxPoints: 10,
 };
 
-/* ============================================================
-   STATE
-   ============================================================ */
+// App state
 const STATE = {
   isLoggedIn: false,
   allSitesData: [],
@@ -42,9 +30,7 @@ const STATE = {
   gaugeCharts: { pm25: null, co2: null, temp: null },
 };
 
-/* ============================================================
-   UTILITY
-   ============================================================ */
+// Utility helpers
 function $(id) { return document.getElementById(id); }
 
 function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
@@ -52,7 +38,7 @@ function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
 function nowStr() {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function showToast(msg, type = 'info', duration = 3500) {
@@ -63,9 +49,7 @@ function showToast(msg, type = 'info', duration = 3500) {
   t._timer = setTimeout(() => { t.className = 'toast'; }, duration);
 }
 
-/* ============================================================
-   SIDEBAR & THEME TOGGLES
-   ============================================================ */
+// Sidebar and theme controls
 function toggleSidebar() {
   $('sidebar').classList.toggle('open');
   $('overlay').classList.toggle('show');
@@ -78,7 +62,6 @@ function toggleSidebarCollapse() {
   } else {
     document.body.classList.toggle('sidebar-collapsed');
   }
-  // Redraw gauges after layout transitions
   setTimeout(() => {
     if (STATE.site4Data) refreshGauges();
   }, 300);
@@ -109,34 +92,26 @@ function initTheme() {
   applyTheme(savedTheme);
 }
 
-
-/* ============================================================
-   PASSWORD TOGGLE
-   ============================================================ */
+// Password visibility toggle
 function togglePw() {
   const inp = $('inputPass');
   inp.type = inp.type === 'password' ? 'text' : 'password';
   $('pwToggle').style.opacity = inp.type === 'text' ? '1' : '0.6';
 }
 
-/* ============================================================
-   TABS
-   ============================================================ */
+// Navigation tabs
 function switchTab(name) {
   ['overview', 'site4'].forEach(n => {
     $(`tab-${n}`).classList.toggle('active', n === name);
     $(`tab-${n}`).setAttribute('aria-selected', n === name);
     $(`panel-${n}`).classList.toggle('active', n === name);
   });
-  // Draw trend chart if switching to site4 and chart not yet initialized
   if (name === 'site4' && STATE.site4Data) {
     setTimeout(refreshGauges, 60);
   }
 }
 
-/* ============================================================
-   AUTO REFRESH
-   ============================================================ */
+// Auto refresh handling
 function toggleAutoRefresh() {
   const on = $('autoRefreshToggle').checked;
   if (on) {
@@ -160,22 +135,20 @@ function stopAutoRefresh() {
   }
 }
 
-/* ============================================================
-   STATUS BADGE
-   ============================================================ */
+// Connection status display
 function setConnected(on) {
   STATE.isLoggedIn = on;
   const badge = $('statusBadge');
-  const dot   = $('statusDot');
-  const text  = $('statusText');
+  const dot = $('statusDot');
+  const text = $('statusText');
   if (on) {
     badge.className = 'status-badge badge-online';
-    dot.className   = 'dot dot-green';
+    dot.className = 'dot dot-green';
     text.textContent = 'Connected';
     showDashboard();
   } else {
     badge.className = 'status-badge badge-offline';
-    dot.className   = 'dot dot-red';
+    dot.className = 'dot dot-red';
     text.textContent = 'Disconnected';
     hideDashboard();
   }
@@ -189,9 +162,7 @@ function updateLastUpdate(timeStr) {
   if (el) el.textContent = t;
 }
 
-/* ============================================================
-   LOGIN
-   ============================================================ */
+// Authentication handling
 async function handleLogin(e) {
   e.preventDefault();
   const user = $('inputUser').value.trim();
@@ -247,19 +218,17 @@ function hideDashboard() {
   }
 }
 
-/* Mock login (demo mode) */
 async function mockLogin(user, pass) {
   await sleep(900);
   return user === 'admin' && pass.length >= 1;
 }
 
-/* Real login via PHP proxy — ส่ง JSON body */
 async function realLogin(user, pass) {
   try {
-    const res  = await fetch(CONFIG.loginUrl, {
-      method:  'POST',
+    const res = await fetch(CONFIG.loginUrl, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ user, pass }),
+      body: JSON.stringify({ user, pass }),
     });
     const json = await res.json();
     if (!json.ok && json.error) console.warn('[AIIR Login]', json.error);
@@ -270,9 +239,7 @@ async function realLogin(user, pass) {
   }
 }
 
-/* ============================================================
-   DATA FETCH
-   ============================================================ */
+// Data fetching from API
 async function fetchData() {
   if (!STATE.isLoggedIn) return;
 
@@ -292,33 +259,33 @@ async function fetchData() {
     const site4Raw = sites.find(s => String(s.Site) === '4') || {};
     const specData = spec && typeof spec === 'object' ? spec : {};
 
-    const specTemp  = specData.temp  ?? specData.Temp  ?? null;
+    const specTemp = specData.temp ?? specData.Temp ?? null;
     const specHumid = specData.humid ?? specData.Humid ?? null;
-    const specEvoc  = specData.evoc  ?? specData.eVOC  ?? null;
-    const specPm25  = specData.pm25  ?? specData.PM25  ?? null;
-    const specPm10  = specData.pm10  ?? specData.PM10  ?? null;
-    const specCo2   = specData.co2   ?? specData.CO2   ?? null;
-    const specRssi  = specData.rssi  ?? specData.RSSI  ?? null;
-    const specUpd   = specData.lastUpdate || site4Raw['Update'] || '';
+    const specEvoc = specData.evoc ?? specData.eVOC ?? null;
+    const specPm25 = specData.pm25 ?? specData.PM25 ?? null;
+    const specPm10 = specData.pm10 ?? specData.PM10 ?? null;
+    const specCo2 = specData.co2 ?? specData.CO2 ?? null;
+    const specRssi = specData.rssi ?? specData.RSSI ?? null;
+    const specUpd = specData.lastUpdate || site4Raw['Update'] || '';
 
     if (Object.keys(site4Raw).length > 0 || spec) {
-      const pm25Val  = specPm25  !== null ? parseFloat(specPm25)  : (parseFloat(site4Raw['PM2.5']) || 0);
-      const pm10Val  = specPm10  !== null ? parseFloat(specPm10)  : (parseFloat(site4Raw['PM10'])  || 0);
-      const co2Val   = specCo2   !== null ? parseFloat(specCo2)   : (parseFloat(site4Raw['CO2'])   || 0);
-      const tempVal  = specTemp  !== null ? parseFloat(specTemp)  : (parseFloat(site4Raw.temp)  || 0);
+      const pm25Val = specPm25 !== null ? parseFloat(specPm25) : (parseFloat(site4Raw['PM2.5']) || 0);
+      const pm10Val = specPm10 !== null ? parseFloat(specPm10) : (parseFloat(site4Raw['PM10']) || 0);
+      const co2Val = specCo2 !== null ? parseFloat(specCo2) : (parseFloat(site4Raw['CO2']) || 0);
+      const tempVal = specTemp !== null ? parseFloat(specTemp) : (parseFloat(site4Raw.temp) || 0);
       const humidVal = specHumid !== null ? parseFloat(specHumid) : (parseFloat(site4Raw.humid) || 0);
-      const evocVal  = specEvoc  !== null ? parseFloat(specEvoc)  : (parseFloat(site4Raw.evoc)  || 0);
-      const rssiVal  = specRssi  !== null ? String(specRssi)      : (site4Raw['RSSI'] || '0');
+      const evocVal = specEvoc !== null ? parseFloat(specEvoc) : (parseFloat(site4Raw.evoc) || 0);
+      const rssiVal = specRssi !== null ? String(specRssi) : (site4Raw['RSSI'] || '0');
 
       STATE.site4Data = {
         ...site4Raw,
         'PM2.5': pm25Val,
-        'PM10':  pm10Val,
-        'CO2':   co2Val,
-        'RSSI':  rssiVal,
-        temp:  tempVal,
+        'PM10': pm10Val,
+        'CO2': co2Val,
+        'RSSI': rssiVal,
+        temp: tempVal,
         humid: humidVal,
-        evoc:  evocVal,
+        evoc: evocVal,
         lastUpdate: specUpd,
       };
       appendHistory(STATE.site4Data);
@@ -345,8 +312,6 @@ async function realFetchAll() {
   const j1 = await r1.json();
   const j2 = await r2.json();
 
-  console.log('%c[AIIR Realtime Data]', 'color:#4ade80;font-weight:700', j2);
-
   if (!j1.ok) {
     if (j1.error === 'session_expired') {
       setConnected(false);
@@ -368,9 +333,7 @@ async function realFetchAll() {
   return [sites, spec];
 }
 
-/* ============================================================
-   DEMO / MOCK DATA
-   ============================================================ */
+// Demo data generator
 const SITE_NAMES = [
   'Site 1 - ห้องเรียน 101',
   'Site 2 - ห้องประชุม',
@@ -392,25 +355,25 @@ async function mockFetchAll() {
   const sites = SITE_NAMES.map((name, i) => {
     const pm25 = rand(5, 60);
     const pm10 = rand(pm25, pm25 * 1.8);
-    const co2  = rand(400, 1400);
+    const co2 = rand(400, 1400);
     const rssi = rand(-85, -40, 0);
-    const up   = nowStr();
+    const up = nowStr();
     const isOnline = Math.random() > 0.1;
     return {
-      Site:   String(i + 1),
+      Site: String(i + 1),
       SiteName: name,
       Status: isOnline ? 'Online' : 'Offline',
-      RSSI:   rssi,
+      RSSI: rssi,
       'PM2.5': pm25,
-      PM10:   pm10,
-      CO2:    co2,
+      PM10: pm10,
+      CO2: co2,
       Update: up,
     };
   });
 
   const s4 = sites[3];
   const spec = {
-    temp:  rand(22, 32),
+    temp: rand(22, 32),
     humid: rand(35, 75),
   };
 
@@ -419,9 +382,7 @@ async function mockFetchAll() {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-/* ============================================================
-   HISTORY (for trend chart)
-   ============================================================ */
+// History data tracking
 function appendHistory(data) {
   const label = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const push = (arr, val) => {
@@ -429,27 +390,24 @@ function appendHistory(data) {
     if (arr.length > CONFIG.trendMaxPoints) arr.shift();
   };
   push(STATE.historyLabels, label);
-  push(STATE.historyPM25,   data['PM2.5'] ?? data.pm25 ?? 0);
-  push(STATE.historyCO2,    data.CO2 ?? data.co2 ?? 0);
-  push(STATE.historyTemp,   data.temp ?? 0);
+  push(STATE.historyPM25, data['PM2.5'] ?? data.pm25 ?? 0);
+  push(STATE.historyCO2, data.CO2 ?? data.co2 ?? 0);
+  push(STATE.historyTemp, data.temp ?? 0);
   updateTrendChart();
 }
 
-/* ============================================================
-   RENDER OVERVIEW TAB
-   ============================================================ */
+// Overview tab rendering
 function renderOverview(sites) {
   const grid = $('sitesGrid');
   const empty = document.getElementById('overviewEmpty');
   if (empty) empty.remove();
 
-  // Remove old cards
   grid.querySelectorAll('.site-card').forEach(c => c.remove());
 
   sites.forEach((s, i) => {
     const pm25 = parseFloat(s['PM2.5'] ?? 0);
     const pm10 = parseFloat(s.PM10 ?? 0);
-    const co2  = parseFloat(s.CO2 ?? 0);
+    const co2 = parseFloat(s.CO2 ?? 0);
     const isOn = (s.Status || '').toLowerCase().includes('online') || (s.Status || '').toLowerCase().includes('ok');
 
     const { label: pm25Lbl, pillClass } = pm25Level(pm25);
@@ -492,7 +450,7 @@ function renderTable(sites) {
   tbody.innerHTML = '';
   sites.forEach(s => {
     const pm25 = parseFloat(s['PM2.5'] ?? 0);
-    const co2  = parseFloat(s.CO2 ?? 0);
+    const co2 = parseFloat(s.CO2 ?? 0);
     const isOn = (s.Status || '').toLowerCase().includes('online');
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -508,48 +466,40 @@ function renderTable(sites) {
   });
 }
 
-/* ============================================================
-   RENDER SITE 4 DETAIL TAB
-   ============================================================ */
+// Site 4 detail tab rendering
 function renderSiteDetail(data) {
-  const pm25  = parseFloat(data['PM2.5'] ?? data.pm25 ?? 0);
-  const pm10  = parseFloat(data.PM10 ?? data.pm10 ?? 0);
-  const co2   = parseFloat(data.CO2 ?? data.co2 ?? 0);
-  const temp  = parseFloat(data.temp ?? 0);
+  const pm25 = parseFloat(data['PM2.5'] ?? data.pm25 ?? 0);
+  const pm10 = parseFloat(data.PM10 ?? data.pm10 ?? 0);
+  const co2 = parseFloat(data.CO2 ?? data.co2 ?? 0);
+  const temp = parseFloat(data.temp ?? 0);
   const humid = parseFloat(data.humid ?? 0);
-  const evoc  = parseFloat(data.evoc ?? 0);
-  const rssi  = parseFloat(data.RSSI ?? data.rssi ?? -70);
+  const evoc = parseFloat(data.evoc ?? 0);
+  const rssi = parseFloat(data.RSSI ?? data.rssi ?? -70);
 
-  // PM2.5
   setMetric('pm25', pm25.toFixed(1), pm25 / 75 * 100, ...pm25LevelFull(pm25));
-  // PM10
   setMetric('pm10', pm10.toFixed(1), pm10 / 150 * 100, ...pm10LevelFull(pm10));
-  // CO2
   setMetric('co2', co2.toFixed(0), co2 / 1500 * 100, ...co2LevelFull(co2));
-  // Temp
+
   const tempPct = clamp((temp - 16) / (40 - 16) * 100, 0, 100);
   setMetricRaw('temp', temp.toFixed(1), tempPct, temp < 26 ? 'เย็นสบาย' : temp < 30 ? 'อุ่น' : 'ร้อน', temp < 26 ? 'good' : temp < 30 ? 'warn' : 'bad', '#C36D4B');
-  // Humid
+
   const humidPct = clamp(humid, 0, 100);
   const humidStatus = humid < 40 ? 'แห้งเกิน' : humid <= 60 ? 'เหมาะสม' : 'ชื้นเกิน';
-  const humidCls    = humid < 40 ? 'warn' : humid <= 60 ? 'good' : 'warn';
+  const humidCls = humid < 40 ? 'warn' : humid <= 60 ? 'good' : 'warn';
   setMetricRaw('humid', humid.toFixed(1), humidPct, humidStatus, humidCls, '#0284C7');
-  // EVOC
-  const evocPct    = clamp((evoc / 50) * 100, 0, 100);
+
+  const evocPct = clamp((evoc / 50) * 100, 0, 100);
   const evocStatus = evoc <= 10 ? 'ดีเยี่ยม' : evoc <= 50 ? 'ปานกลาง' : 'สูง';
-  const evocCls    = evoc <= 10 ? 'good' : evoc <= 50 ? 'warn' : 'bad';
-  const evocColor  = evoc <= 10 ? '#0D9488' : evoc <= 50 ? '#0284C7' : '#C36D4B';
+  const evocCls = evoc <= 10 ? 'good' : evoc <= 50 ? 'warn' : 'bad';
+  const evocColor = evoc <= 10 ? '#0D9488' : evoc <= 50 ? '#0284C7' : '#C36D4B';
   setMetricRaw('evoc', evoc.toFixed(0), evocPct, evocStatus, evocCls, evocColor);
-  // RSSI
+
   const rssiNorm = clamp(((rssi + 100) / 60) * 100, 0, 100);
   const rssiStatus = rssi >= -60 ? 'สัญญาณดีมาก' : rssi >= -70 ? 'ดี' : rssi >= -80 ? 'พอใช้' : 'อ่อน';
-  const rssiCls    = rssi >= -60 ? 'good' : rssi >= -70 ? 'info' : 'warn';
+  const rssiCls = rssi >= -60 ? 'good' : rssi >= -70 ? 'info' : 'warn';
   setMetricRaw('rssi', rssi.toFixed(0), rssiNorm, rssiStatus, rssiCls, '#737877');
 
-  // Control recommendations
   renderControlCards(pm25, co2, temp, humid);
-
-  // Gauges
   refreshGauges(pm25, co2, temp);
 }
 
@@ -574,29 +524,27 @@ function setMetricRaw(key, valStr, barPct, label, cls, barColor) {
   statusEl.className = `metric-status ${cls}`;
 }
 
-/* ============================================================
-   AIR QUALITY LEVELS (mirror ui_components.py)
-   ============================================================ */
+// Air quality thresholds and colors
 function pm25LevelFull(v) {
-  if (v <= 12)  return ['ดีเยี่ยม', 'good', '#0D9488', '#0D9488'];
-  if (v <= 35)  return ['ปานกลาง', 'warn', '#0284C7', '#0284C7'];
-  return              ['อันตราย',  'bad',  '#C36D4B', '#C36D4B'];
+  if (v <= 12) return ['ดีเยี่ยม', 'good', '#0D9488', '#0D9488'];
+  if (v <= 35) return ['ปานกลาง', 'warn', '#0284C7', '#0284C7'];
+  return ['อันตราย', 'bad', '#C36D4B', '#C36D4B'];
 }
 function pm10LevelFull(v) {
-  if (v <= 50)  return ['ดีเยี่ยม', 'good', '#0D9488', '#0D9488'];
+  if (v <= 50) return ['ดีเยี่ยม', 'good', '#0D9488', '#0D9488'];
   if (v <= 100) return ['ปานกลาง', 'warn', '#0284C7', '#0284C7'];
-  return              ['อันตราย',  'bad',  '#C36D4B', '#C36D4B'];
+  return ['อันตราย', 'bad', '#C36D4B', '#C36D4B'];
 }
 function co2LevelFull(v) {
-  if (v < 800)  return ['สะอาด',   'good', '#0D9488', '#0D9488'];
+  if (v < 800) return ['สะอาด', 'good', '#0D9488', '#0D9488'];
   if (v < 1000) return ['เพิ่มขึ้น', 'warn', '#0284C7', '#0284C7'];
-  return              ['อับชื้น',  'bad',  '#C36D4B', '#C36D4B'];
+  return ['อับชื้น', 'bad', '#C36D4B', '#C36D4B'];
 }
 
 function pm25Level(v) {
-  if (v <= 12)  return { label: 'ดีเยี่ยม', pillClass: 'pill-ok' };
-  if (v <= 35)  return { label: 'ปานกลาง',  pillClass: 'pill-warn' };
-  return              { label: 'อันตราย',   pillClass: 'pill-bad' };
+  if (v <= 12) return { label: 'ดีเยี่ยม', pillClass: 'pill-ok' };
+  if (v <= 35) return { label: 'ปานกลาง', pillClass: 'pill-warn' };
+  return { label: 'อันตราย', pillClass: 'pill-bad' };
 }
 function pm25Color(v) {
   if (v <= 12) return '#0D9488';
@@ -604,49 +552,40 @@ function pm25Color(v) {
   return '#C36D4B';
 }
 function co2Color(v) {
-  if (v < 800)  return '#0D9488';
+  if (v < 800) return '#0D9488';
   if (v < 1000) return '#0284C7';
   return '#C36D4B';
 }
 
-/* ============================================================
-   CONTROL RECOMMENDATIONS (mirrors app logic)
-   ============================================================ */
+// Control recommendations logic
 function renderControlCards(pm25, co2, temp, humid) {
-  // Air Purifier
   let purifier;
-  if (pm25 > 35)     purifier = '🔴 เปิด (High Speed) — PM2.5 เกินมาตรฐาน';
+  if (pm25 > 35) purifier = '🔴 เปิด (High Speed) — PM2.5 เกินมาตรฐาน';
   else if (pm25 > 12) purifier = '🟡 เปิด (Low Speed) — PM2.5 ปานกลาง';
-  else                purifier = '🟢 ปิด — อากาศสะอาดดี';
+  else purifier = '🟢 ปิด — อากาศสะอาดดี';
 
-  // Ventilation
   let ventilation;
-  if (co2 > 1000)     ventilation = '🔴 เปิด (Max) — CO2 สูงมาก';
+  if (co2 > 1000) ventilation = '🔴 เปิด (Max) — CO2 สูงมาก';
   else if (co2 > 800) ventilation = '🟡 เปิด — CO2 เพิ่มขึ้น';
-  else                ventilation = '🟢 ปิด — CO2 ปกติ';
+  else ventilation = '🟢 ปิด — CO2 ปกติ';
 
-  // AC
   let ac;
-  if (temp > 30)      ac = '🔴 เปิด (Cool 22°C) — ร้อนมาก';
+  if (temp > 30) ac = '🔴 เปิด (Cool 22°C) — ร้อนมาก';
   else if (temp > 26) ac = '🟡 เปิด (Cool 25°C) — อุ่น';
-  else                ac = '🟢 ปิด / Eco Mode — อุณหภูมิเหมาะสม';
+  else ac = '🟢 ปิด / Eco Mode — อุณหภูมิเหมาะสม';
 
-  // Humidity
   let humidity;
-  if (humid < 40)      humidity = '🟡 Humidifier ON — อากาศแห้งเกิน';
+  if (humid < 40) humidity = '🟡 Humidifier ON — อากาศแห้งเกิน';
   else if (humid > 60) humidity = '🟡 Dehumidifier ON — ความชื้นสูง';
-  else                 humidity = '🟢 ปิด — ความชื้นเหมาะสม (40-60%)';
+  else humidity = '🟢 ปิด — ความชื้นเหมาะสม (40-60%)';
 
-  $('cmd-purifier').textContent   = purifier;
+  $('cmd-purifier').textContent = purifier;
   $('cmd-ventilation').textContent = ventilation;
-  $('cmd-ac').textContent          = ac;
-  $('cmd-humidity').textContent    = humidity;
+  $('cmd-ac').textContent = ac;
+  $('cmd-humidity').textContent = humidity;
 }
 
-/* ============================================================
-   GAUGE CHARTS (Canvas-based semi-circle gauge)
-   Uses Chart.js doughnut trick
-   ============================================================ */
+// Semi-circle gauge charts
 function drawGauge(canvasId, value, max, ranges, label, unit) {
   const canvas = $(canvasId);
   if (!canvas) return;
@@ -654,7 +593,6 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   const theme = document.documentElement.getAttribute('data-theme') || 'light';
   const isLight = theme === 'light';
 
-  // Determine color
   let color = '#0D9488';
   for (const r of ranges) {
     if (value >= r.min && value <= r.max) { color = r.color; break; }
@@ -663,25 +601,21 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   const pct = clamp(value / max, 0, 1);
   const dpr = window.devicePixelRatio || 1;
 
-  // Get reliable dimensions from bounding rect
   const rect = canvas.getBoundingClientRect();
-  const W = rect.width  > 0 ? rect.width  : 220;
+  const W = rect.width > 0 ? rect.width : 220;
   const H = rect.height > 0 ? rect.height : 170;
 
-  // Set actual canvas pixel size
-  canvas.width  = Math.round(W * dpr);
+  canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
   ctx.scale(dpr, dpr);
 
-  // Layout constants — gauge sits at bottom-center of canvas
-  const ro  = Math.min(W / 2, H) - 20;   // outer radius
-  const ri  = ro - Math.max(18, ro * 0.28); // inner radius (ring thickness)
+  const ro = Math.min(W / 2, H) - 20;
+  const ri = ro - Math.max(18, ro * 0.28);
   const cxr = W / 2;
-  const cyr = H - 16;                     // pivot point near bottom
+  const cyr = H - 16;
 
   ctx.clearRect(0, 0, W, H);
 
-  // ── Background arc (track) ──
   ctx.beginPath();
   ctx.arc(cxr, cyr, ro, Math.PI, 2 * Math.PI);
   ctx.arc(cxr, cyr, ri, 2 * Math.PI, Math.PI, true);
@@ -689,9 +623,8 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   ctx.fillStyle = isLight ? 'rgba(15, 23, 42, 0.07)' : 'rgba(255, 255, 255, 0.08)';
   ctx.fill();
 
-  // ── Colored value arc ──
   const startAngle = Math.PI;
-  const endAngle   = Math.PI + pct * Math.PI;
+  const endAngle = Math.PI + pct * Math.PI;
   ctx.beginPath();
   ctx.arc(cxr, cyr, ro, startAngle, endAngle);
   ctx.arc(cxr, cyr, ri, endAngle, startAngle, true);
@@ -702,7 +635,6 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   ctx.fill();
   ctx.shadowBlur = 0;
 
-  // ── Value text (large, centered inside arc) ──
   const valueFontSize = Math.max(14, Math.floor(ro * 0.42));
   ctx.fillStyle = isLight ? '#0F172A' : '#FFFFFF';
   ctx.font = `800 ${valueFontSize}px Inter, sans-serif`;
@@ -711,13 +643,11 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   const textY = cyr - ro * 0.28;
   ctx.fillText(Number.isInteger(value) ? value : Number(value).toFixed(1), cxr, textY);
 
-  // ── Unit text (below value) ──
   const unitFontSize = Math.max(9, Math.floor(ro * 0.19));
   ctx.fillStyle = isLight ? '#475569' : 'rgba(255,255,255,0.6)';
   ctx.font = `500 ${unitFontSize}px Inter, sans-serif`;
   ctx.fillText(unit, cxr, textY + valueFontSize * 0.85);
 
-  // ── Min / Max edge labels ──
   const edgeFontSize = Math.max(8, Math.floor(ro * 0.17));
   ctx.fillStyle = isLight ? '#94A3B8' : 'rgba(255,255,255,0.35)';
   ctx.font = `400 ${edgeFontSize}px Inter, sans-serif`;
@@ -727,7 +657,6 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   ctx.textAlign = 'right';
   ctx.fillText(max, cxr + ro - 2, cyr + 4);
 
-  // ── Label (sensor name) below arc, centered ──
   const labelFontSize = Math.max(9, Math.floor(ro * 0.18));
   ctx.fillStyle = isLight ? '#475569' : 'rgba(255,255,255,0.6)';
   ctx.font = `600 ${labelFontSize}px Inter, sans-serif`;
@@ -737,33 +666,32 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
 }
 
 const PM25_RANGES = [
-  { min: 0,  max: 12,   color: '#0D9488' },
-  { min: 12, max: 35,   color: '#0284C7' },
+  { min: 0, max: 12, color: '#0D9488' },
+  { min: 12, max: 35, color: '#0284C7' },
   { min: 35, max: 9999, color: '#C36D4B' },
 ];
 const CO2_RANGES = [
-  { min: 0,    max: 800,  color: '#0D9488' },
-  { min: 800,  max: 1000, color: '#0284C7' },
+  { min: 0, max: 800, color: '#0D9488' },
+  { min: 800, max: 1000, color: '#0284C7' },
   { min: 1000, max: 9999, color: '#C36D4B' },
 ];
 const TEMP_RANGES = [
-  { min: 0,  max: 26,   color: '#0D9488' },
-  { min: 26, max: 30,   color: '#0284C7' },
+  { min: 0, max: 26, color: '#0D9488' },
+  { min: 26, max: 30, color: '#0284C7' },
   { min: 30, max: 9999, color: '#C36D4B' },
 ];
 
 function refreshGauges(pm25, co2, temp) {
   if (pm25 === undefined && STATE.site4Data) {
     pm25 = parseFloat(STATE.site4Data['PM2.5'] ?? 0);
-    co2  = parseFloat(STATE.site4Data.CO2 ?? 0);
+    co2 = parseFloat(STATE.site4Data.CO2 ?? 0);
     temp = parseFloat(STATE.site4Data.temp ?? 0);
   }
-  drawGauge('gauge-pm25', pm25 || 0, 75,   PM25_RANGES, 'PM2.5',       'µg/m³');
-  drawGauge('gauge-co2',  co2  || 0, 1500, CO2_RANGES,  'CO2',         'ppm');
-  drawGauge('gauge-temp', temp || 0, 45,   TEMP_RANGES, 'Temperature', '°C');
+  drawGauge('gauge-pm25', pm25 || 0, 75, PM25_RANGES, 'PM2.5', 'µg/m³');
+  drawGauge('gauge-co2', co2 || 0, 1500, CO2_RANGES, 'CO2', 'ppm');
+  drawGauge('gauge-temp', temp || 0, 45, TEMP_RANGES, 'Temperature', '°C');
 }
 
-/* Re-draw gauges on window resize */
 let _resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(_resizeTimer);
@@ -772,9 +700,7 @@ window.addEventListener('resize', () => {
   }, 200);
 });
 
-/* ============================================================
-   TREND CHART (Chart.js Line)
-   ============================================================ */
+// Historical trend chart
 function updateTrendChart() {
   const ctx = $('trendChart');
   if (!ctx) return;
@@ -785,15 +711,15 @@ function updateTrendChart() {
   const gridColor = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)';
 
   if (STATE.trendChart) {
-    STATE.trendChart.data.labels                  = [...STATE.historyLabels];
-    STATE.trendChart.data.datasets[0].data        = [...STATE.historyPM25];
-    STATE.trendChart.data.datasets[1].data        = [...STATE.historyCO2].map(v => v / 10);
-    STATE.trendChart.data.datasets[2].data        = [...STATE.historyTemp];
+    STATE.trendChart.data.labels = [...STATE.historyLabels];
+    STATE.trendChart.data.datasets[0].data = [...STATE.historyPM25];
+    STATE.trendChart.data.datasets[1].data = [...STATE.historyCO2].map(v => v / 10);
+    STATE.trendChart.data.datasets[2].data = [...STATE.historyTemp];
     STATE.trendChart.options.plugins.legend.labels.color = textColor;
     STATE.trendChart.options.scales.x.ticks.color = textColor;
     STATE.trendChart.options.scales.y.ticks.color = textColor;
-    STATE.trendChart.options.scales.x.grid.color  = gridColor;
-    STATE.trendChart.options.scales.y.grid.color  = gridColor;
+    STATE.trendChart.options.scales.x.grid.color = gridColor;
+    STATE.trendChart.options.scales.y.grid.color = gridColor;
     STATE.trendChart.update('active');
     return;
   }
@@ -805,7 +731,7 @@ function updateTrendChart() {
       datasets: [
         {
           label: 'PM2.5 (µg/m³)',
-          data:  [...STATE.historyPM25],
+          data: [...STATE.historyPM25],
           borderColor: '#0D9488',
           backgroundColor: 'rgba(13,148,136,0.12)',
           borderWidth: 2.5,
@@ -816,7 +742,7 @@ function updateTrendChart() {
         },
         {
           label: 'CO2 ÷10 (ppm/10)',
-          data:  STATE.historyCO2.map(v => v / 10),
+          data: STATE.historyCO2.map(v => v / 10),
           borderColor: '#0284C7',
           backgroundColor: 'rgba(2,132,199,0.1)',
           borderWidth: 2.5,
@@ -827,7 +753,7 @@ function updateTrendChart() {
         },
         {
           label: 'Temp (°C)',
-          data:  [...STATE.historyTemp],
+          data: [...STATE.historyTemp],
           borderColor: '#C36D4B',
           backgroundColor: 'rgba(195,109,75,0.1)',
           borderWidth: 2.5,
@@ -853,7 +779,7 @@ function updateTrendChart() {
         tooltip: {
           backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(10,8,32,0.92)',
           titleColor: isLight ? '#0F172A' : 'rgba(255,255,255,0.9)',
-          bodyColor:  isLight ? '#475569' : 'rgba(255,255,255,0.7)',
+          bodyColor: isLight ? '#475569' : 'rgba(255,255,255,0.7)',
           borderColor: isLight ? '#E2E8F0' : 'rgba(13,148,136,0.35)',
           borderWidth: 1,
           padding: 12,
@@ -865,11 +791,11 @@ function updateTrendChart() {
       scales: {
         x: {
           ticks: { color: textColor, font: { size: 11, family: 'Inter' } },
-          grid:  { color: gridColor },
+          grid: { color: gridColor },
         },
         y: {
           ticks: { color: textColor, font: { size: 11, family: 'Inter' } },
-          grid:  { color: gridColor },
+          grid: { color: gridColor },
           beginAtZero: true,
         },
       },
@@ -877,35 +803,30 @@ function updateTrendChart() {
   });
 }
 
-/* ============================================================
-   CSV EXPORT
-   ============================================================ */
+// Export data to CSV
 function downloadCSV() {
   if (!STATE.allSitesData.length) { showToast('ไม่มีข้อมูล', 'error'); return; }
   const headers = ['Site', 'Status', 'PM2.5', 'PM10', 'CO2', 'RSSI', 'Update'];
-  const rows    = STATE.allSitesData.map(s =>
-    [s.SiteName || ('Site '+s.Site), s.Status, s['PM2.5'], s.PM10, s.CO2, s.RSSI, s.Update]
+  const rows = STATE.allSitesData.map(s =>
+    [s.SiteName || ('Site ' + s.Site), s.Status, s['PM2.5'], s.PM10, s.CO2, s.RSSI, s.Update]
       .map(v => `"${String(v ?? '').replace(/"/g, '""')}"`)
       .join(',')
   );
-  const csv   = [headers.join(','), ...rows].join('\r\n');
-  const blob  = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url   = URL.createObjectURL(blob);
-  const a     = document.createElement('a');
-  a.href      = url;
-  a.download  = `AIIR_IAQ_${nowStr().replace(/[/:]/g, '-')}.csv`;
+  const csv = [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `AIIR_IAQ_${nowStr().replace(/[/:]/g, '-')}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   showToast('✅ ดาวน์โหลด CSV สำเร็จ', 'success');
 }
 
-/* ============================================================
-   INIT
-   ============================================================ */
+// Initializer
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
 
-  // Redraw gauges dynamically on window resize
   let resizeTimer;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
@@ -913,9 +834,4 @@ document.addEventListener('DOMContentLoaded', () => {
       if (STATE.site4Data) refreshGauges();
     }, 150);
   });
-
-  console.log('%c🌿 AIIR IAQ Dashboard loaded — Demo Mode: ' + CONFIG.demoMode,
-    'color:#a78bfa;font-weight:700;font-size:14px;');
-  console.log('%cLogin with username: admin, any password', 'color:#60a5fa;font-size:12px;');
 });
-

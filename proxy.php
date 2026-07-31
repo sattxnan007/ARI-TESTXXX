@@ -40,9 +40,7 @@ switch ($action) {
         break;
 }
 
-/* ============================================================
-   ฟังก์ชัน cURL helper
-   ============================================================ */
+// cURL helper function
 function makeCurl(string $url, array $postData = [], array $extraHeaders = [], bool $followRedirect = true): array {
     global $cookieFile;
 
@@ -92,10 +90,7 @@ function makeCurl(string $url, array $postData = [], array $extraHeaders = [], b
     ];
 }
 
-/* ============================================================
-   LOGIN
-   mirrors: api.py → login_to_aiir()
-   ============================================================ */
+// Login handler
 function doLogin(): void {
     $raw   = file_get_contents('php://input');
     $body  = json_decode($raw, true) ?: [];
@@ -132,10 +127,7 @@ function doLogin(): void {
     echo json_encode(['ok' => $loggedIn]);
 }
 
-/* ============================================================
-   GET SITE DATA (All Sites)
-   mirrors: api.py → fetch_sensor_data()
-   ============================================================ */
+// Get summary data for all sites
 function getSiteData(): void {
     // POST to getSiteData.php (session cookie ส่งอัตโนมัติผ่าน cookie jar)
     $r = makeCurl(AIIR_BASE . 'getSiteData.php', ['dummy' => '1'], [
@@ -180,10 +172,7 @@ function getSiteData(): void {
     echo json_encode(['ok' => true, 'data' => $records]);
 }
 
-/* ============================================================
-   GET SPEC DATA (Temp + Humidity + EVOC + PM + CO2 for Site 4)
-   mirrors: api.py → fetch_temp_humidity(site_id="4")
-   ============================================================ */
+// Get detailed metrics for specific site
 function getSpecData(): void {
     $siteId   = $_GET['site'] ?? $_POST['site'] ?? '4';
     $siteType = $_GET['siteType'] ?? $_POST['siteType'] ?? $siteId;
@@ -307,9 +296,7 @@ function getSpecData(): void {
     ]);
 }
 
-/* ============================================================
-   LOGOUT
-   ============================================================ */
+// Logout handler
 function doLogout(): void {
     global $cookieFile;
     if (file_exists($cookieFile)) @unlink($cookieFile);
