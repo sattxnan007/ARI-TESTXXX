@@ -85,7 +85,7 @@ function toggleSidebarCollapse() {
 }
 
 function toggleTheme() {
-  const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
   const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
   applyTheme(newTheme);
 }
@@ -95,10 +95,17 @@ function applyTheme(theme) {
   const icon = $('themeIcon');
   if (icon) icon.textContent = theme === 'light' ? '☀️' : '🌙';
   localStorage.setItem('aiir_theme', theme);
+
+  if (STATE.site4Data) refreshGauges();
+  if (STATE.trendChart) {
+    STATE.trendChart.destroy();
+    STATE.trendChart = null;
+    updateTrendChart();
+  }
 }
 
 function initTheme() {
-  const savedTheme = localStorage.getItem('aiir_theme') || 'dark';
+  const savedTheme = localStorage.getItem('aiir_theme') || 'light';
   applyTheme(savedTheme);
 }
 
@@ -174,11 +181,12 @@ function setConnected(on) {
   }
 }
 
-function updateLastUpdate() {
-  const t = nowStr();
+function updateLastUpdate(timeStr) {
+  const t = timeStr || nowStr();
   const wrap = $('lastUpdateWrap');
-  wrap.hidden = false;
-  $('lastUpdateTime').textContent = t;
+  if (wrap) wrap.hidden = false;
+  const el = $('lastUpdateTime');
+  if (el) el.textContent = t;
 }
 
 /* ============================================================
@@ -269,7 +277,7 @@ async function fetchData() {
   if (!STATE.isLoggedIn) return;
 
   const btn = $('manualRefreshBtn');
-  btn.classList.add('spinning');
+  if (btn) btn.classList.add('spinning');
 
   try {
     const [sites, spec] = CONFIG.demoMode
@@ -279,26 +287,28 @@ async function fetchData() {
     if (sites && sites.length > 0) {
       STATE.allSitesData = sites;
       renderOverview(sites);
-      updateLastUpdate();
     }
 
-    // รวม site4 data จาก getSiteData (PM2.5, PM10, CO2, RSSI)
-    // กับ spec data จาก getSpecSiteData (temp, humid, evoc, + PM, CO2, RSSI เป็น fallback)
     const site4Raw = sites.find(s => String(s.Site) === '4') || {};
-
-    // spec อาจเป็น object ตรงๆ หรือ { temp, humid } ที่อยู่ใน j2
     const specData = spec && typeof spec === 'object' ? spec : {};
-    // ลอง parse จากหลาย key ที่ proxy.php อาจส่งมา
-    const specTemp  = specData.temp  ?? specData.Temp  ?? specData.temperature ?? null;
-    const specHumid = specData.humid ?? specData.Humid ?? specData.humidity    ?? null;
-    const specEvoc  = specData.evoc  ?? specData.eVOC  ?? specData.evoc_ppb   ?? null;
+
+    const specTemp  = specData.temp  ?? specData.Temp  ?? null;
+    const specHumid = specData.humid ?? specData.Humid ?? null;
+    const specEvoc  = specData.evoc  ?? specData.eVOC  ?? null;
+    const specPm25  = specData.pm25  ?? specData.PM25  ?? null;
+    const specPm10  = specData.pm10  ?? specData.PM10  ?? null;
+    const specCo2   = specData.co2   ?? specData.CO2   ?? null;
+    const specRssi  = specData.rssi  ?? specData.RSSI  ?? null;
+    const specUpd   = specData.lastUpdate || site4Raw['Update'] || '';
 
     if (Object.keys(site4Raw).length > 0 || spec) {
-      // ถ้า getSiteData ไม่มี PM/CO2/RSSI ของ site 4 ให้ใช้จาก spec แทน
-      const pm25Val  = parseFloat(site4Raw['PM2.5']) || specData.pm25 || 0;
-      const pm10Val  = parseFloat(site4Raw['PM10'])  || specData.pm10 || 0;
-      const co2Val   = parseFloat(site4Raw['CO2'])   || specData.co2  || 0;
-      const rssiVal  = site4Raw['RSSI'] || specData.rssi || '0';
+      const pm25Val  = specPm25  !== null ? parseFloat(specPm25)  : (parseFloat(site4Raw['PM2.5']) || 0);
+      const pm10Val  = specPm10  !== null ? parseFloat(specPm10)  : (parseFloat(site4Raw['PM10'])  || 0);
+      const co2Val   = specCo2   !== null ? parseFloat(specCo2)   : (parseFloat(site4Raw['CO2'])   || 0);
+      const tempVal  = specTemp  !== null ? parseFloat(specTemp)  : (parseFloat(site4Raw.temp)  || 0);
+      const humidVal = specHumid !== null ? parseFloat(specHumid) : (parseFloat(site4Raw.humid) || 0);
+      const evocVal  = specEvoc  !== null ? parseFloat(specEvoc)  : (parseFloat(site4Raw.evoc)  || 0);
+      const rssiVal  = specRssi  !== null ? String(specRssi)      : (site4Raw['RSSI'] || '0');
 
       STATE.site4Data = {
         ...site4Raw,
@@ -306,18 +316,22 @@ async function fetchData() {
         'PM10':  pm10Val,
         'CO2':   co2Val,
         'RSSI':  rssiVal,
-        temp:  specTemp  !== null ? parseFloat(specTemp)  : (parseFloat(site4Raw.temp)  || 0),
-        humid: specHumid !== null ? parseFloat(specHumid) : (parseFloat(site4Raw.humid) || 0),
-        evoc:  specEvoc  !== null ? parseFloat(specEvoc)  : (parseFloat(site4Raw.evoc)  || 0),
+        temp:  tempVal,
+        humid: humidVal,
+        evoc:  evocVal,
+        lastUpdate: specUpd,
       };
       appendHistory(STATE.site4Data);
       renderSiteDetail(STATE.site4Data);
+      updateLastUpdate(specUpd);
+    } else {
+      updateLastUpdate();
     }
   } catch (err) {
     console.error('fetchData error:', err);
     showToast('เกิดข้อผิดพลาดในการดึงข้อมูล', 'error');
   } finally {
-    btn.classList.remove('spinning');
+    if (btn) btn.classList.remove('spinning');
   }
 }
 
@@ -325,18 +339,14 @@ async function fetchData() {
 async function realFetchAll() {
   const [r1, r2] = await Promise.all([
     fetch(CONFIG.siteDataUrl),
-    fetch(CONFIG.specDataUrl + '&site=4'),
+    fetch(CONFIG.specDataUrl + '&site=4&siteType=4'),
   ]);
 
   const j1 = await r1.json();
   const j2 = await r2.json();
 
-  // ===== DEBUG: ดูว่า getSpecData ส่งอะไรกลับมา =====
-  console.log('%c[AIIR DEBUG] getSpecData response:', 'color:#f97316;font-weight:700', j2);
-  console.log('%c[AIIR DEBUG] temp:', 'color:#38bdf8', j2.temp, '| humid:', j2.humid);
-  // ===================================================
+  console.log('%c[AIIR Realtime Data]', 'color:#4ade80;font-weight:700', j2);
 
-  // proxy.php ส่งกลับ { ok: true, data: [...] } หรือ { ok: false, error: '...' }
   if (!j1.ok) {
     if (j1.error === 'session_expired') {
       setConnected(false);
@@ -349,11 +359,9 @@ async function realFetchAll() {
 
   const sites = (j1.data || []).map(s => ({
     ...s,
-    // ใส่ชื่อ Site ที่อ่านได้ (ถ้า API ไม่ส่งมา)
     SiteName: s.SiteName || ('Site ' + s.Site),
   }));
 
-  // spec data (temp, humid, evoc) — ok=false ไม่ถือว่า fatal
   const spec = j2.ok ? j2 : null;
   if (!j2.ok) console.warn('[getSpecData]', j2.error, j2.raw ?? '');
 
@@ -509,6 +517,7 @@ function renderSiteDetail(data) {
   const co2   = parseFloat(data.CO2 ?? data.co2 ?? 0);
   const temp  = parseFloat(data.temp ?? 0);
   const humid = parseFloat(data.humid ?? 0);
+  const evoc  = parseFloat(data.evoc ?? 0);
   const rssi  = parseFloat(data.RSSI ?? data.rssi ?? -70);
 
   // PM2.5
@@ -519,17 +528,23 @@ function renderSiteDetail(data) {
   setMetric('co2', co2.toFixed(0), co2 / 1500 * 100, ...co2LevelFull(co2));
   // Temp
   const tempPct = clamp((temp - 16) / (40 - 16) * 100, 0, 100);
-  setMetricRaw('temp', temp.toFixed(1), tempPct, temp < 26 ? 'เย็นสบาย' : temp < 30 ? 'อุ่น' : 'ร้อน', temp < 26 ? 'good' : temp < 30 ? 'warn' : 'bad', '#f97316');
+  setMetricRaw('temp', temp.toFixed(1), tempPct, temp < 26 ? 'เย็นสบาย' : temp < 30 ? 'อุ่น' : 'ร้อน', temp < 26 ? 'good' : temp < 30 ? 'warn' : 'bad', '#C36D4B');
   // Humid
   const humidPct = clamp(humid, 0, 100);
   const humidStatus = humid < 40 ? 'แห้งเกิน' : humid <= 60 ? 'เหมาะสม' : 'ชื้นเกิน';
   const humidCls    = humid < 40 ? 'warn' : humid <= 60 ? 'good' : 'warn';
-  setMetricRaw('humid', humid.toFixed(1), humidPct, humidStatus, humidCls, '#38bdf8');
+  setMetricRaw('humid', humid.toFixed(1), humidPct, humidStatus, humidCls, '#0284C7');
+  // EVOC
+  const evocPct    = clamp((evoc / 50) * 100, 0, 100);
+  const evocStatus = evoc <= 10 ? 'ดีเยี่ยม' : evoc <= 50 ? 'ปานกลาง' : 'สูง';
+  const evocCls    = evoc <= 10 ? 'good' : evoc <= 50 ? 'warn' : 'bad';
+  const evocColor  = evoc <= 10 ? '#0D9488' : evoc <= 50 ? '#0284C7' : '#C36D4B';
+  setMetricRaw('evoc', evoc.toFixed(0), evocPct, evocStatus, evocCls, evocColor);
   // RSSI
   const rssiNorm = clamp(((rssi + 100) / 60) * 100, 0, 100);
   const rssiStatus = rssi >= -60 ? 'สัญญาณดีมาก' : rssi >= -70 ? 'ดี' : rssi >= -80 ? 'พอใช้' : 'อ่อน';
   const rssiCls    = rssi >= -60 ? 'good' : rssi >= -70 ? 'info' : 'warn';
-  setMetricRaw('rssi', rssi.toFixed(0), rssiNorm, rssiStatus, rssiCls, '#a78bfa');
+  setMetricRaw('rssi', rssi.toFixed(0), rssiNorm, rssiStatus, rssiCls, '#737877');
 
   // Control recommendations
   renderControlCards(pm25, co2, temp, humid);
@@ -563,19 +578,19 @@ function setMetricRaw(key, valStr, barPct, label, cls, barColor) {
    AIR QUALITY LEVELS (mirror ui_components.py)
    ============================================================ */
 function pm25LevelFull(v) {
-  if (v <= 12)  return ['ดีเยี่ยม', 'good', '#4ade80', '#4ade80'];
-  if (v <= 35)  return ['ปานกลาง', 'warn', '#fbbf24', '#fbbf24'];
-  return              ['อันตราย',  'bad',  '#f87171', '#f87171'];
+  if (v <= 12)  return ['ดีเยี่ยม', 'good', '#0D9488', '#0D9488'];
+  if (v <= 35)  return ['ปานกลาง', 'warn', '#0284C7', '#0284C7'];
+  return              ['อันตราย',  'bad',  '#C36D4B', '#C36D4B'];
 }
 function pm10LevelFull(v) {
-  if (v <= 50)  return ['ดีเยี่ยม', 'good', '#4ade80', '#4ade80'];
-  if (v <= 100) return ['ปานกลาง', 'warn', '#fbbf24', '#fbbf24'];
-  return              ['อันตราย',  'bad',  '#f87171', '#f87171'];
+  if (v <= 50)  return ['ดีเยี่ยม', 'good', '#0D9488', '#0D9488'];
+  if (v <= 100) return ['ปานกลาง', 'warn', '#0284C7', '#0284C7'];
+  return              ['อันตราย',  'bad',  '#C36D4B', '#C36D4B'];
 }
 function co2LevelFull(v) {
-  if (v < 800)  return ['สะอาด',   'good', '#4ade80', '#4ade80'];
-  if (v < 1000) return ['เพิ่มขึ้น', 'warn', '#fbbf24', '#fbbf24'];
-  return              ['อับชื้น',  'bad',  '#f87171', '#f87171'];
+  if (v < 800)  return ['สะอาด',   'good', '#0D9488', '#0D9488'];
+  if (v < 1000) return ['เพิ่มขึ้น', 'warn', '#0284C7', '#0284C7'];
+  return              ['อับชื้น',  'bad',  '#C36D4B', '#C36D4B'];
 }
 
 function pm25Level(v) {
@@ -584,14 +599,14 @@ function pm25Level(v) {
   return              { label: 'อันตราย',   pillClass: 'pill-bad' };
 }
 function pm25Color(v) {
-  if (v <= 12) return '#4ade80';
-  if (v <= 35) return '#fbbf24';
-  return '#f87171';
+  if (v <= 12) return '#0D9488';
+  if (v <= 35) return '#0284C7';
+  return '#C36D4B';
 }
 function co2Color(v) {
-  if (v < 800)  return '#4ade80';
-  if (v < 1000) return '#fbbf24';
-  return '#f87171';
+  if (v < 800)  return '#0D9488';
+  if (v < 1000) return '#0284C7';
+  return '#C36D4B';
 }
 
 /* ============================================================
@@ -636,9 +651,11 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   const canvas = $(canvasId);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  const theme = document.documentElement.getAttribute('data-theme') || 'light';
+  const isLight = theme === 'light';
 
   // Determine color
-  let color = '#a78bfa';
+  let color = '#0D9488';
   for (const r of ranges) {
     if (value >= r.min && value <= r.max) { color = r.color; break; }
   }
@@ -646,7 +663,7 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   const pct = clamp(value / max, 0, 1);
   const dpr = window.devicePixelRatio || 1;
 
-  // Get reliable dimensions from bounding rect (fixes offsetWidth=0 bug)
+  // Get reliable dimensions from bounding rect
   const rect = canvas.getBoundingClientRect();
   const W = rect.width  > 0 ? rect.width  : 220;
   const H = rect.height > 0 ? rect.height : 170;
@@ -669,7 +686,7 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   ctx.arc(cxr, cyr, ro, Math.PI, 2 * Math.PI);
   ctx.arc(cxr, cyr, ri, 2 * Math.PI, Math.PI, true);
   ctx.closePath();
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillStyle = isLight ? 'rgba(15, 23, 42, 0.07)' : 'rgba(255, 255, 255, 0.08)';
   ctx.fill();
 
   // ── Colored value arc ──
@@ -680,30 +697,29 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   ctx.arc(cxr, cyr, ri, endAngle, startAngle, true);
   ctx.closePath();
   ctx.fillStyle = color;
-  ctx.shadowBlur = 18;
+  ctx.shadowBlur = isLight ? 6 : 14;
   ctx.shadowColor = color;
   ctx.fill();
   ctx.shadowBlur = 0;
 
   // ── Value text (large, centered inside arc) ──
   const valueFontSize = Math.max(14, Math.floor(ro * 0.42));
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `700 ${valueFontSize}px Inter, sans-serif`;
+  ctx.fillStyle = isLight ? '#0F172A' : '#FFFFFF';
+  ctx.font = `800 ${valueFontSize}px Inter, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  // Position: center of the arc opening, raised upward
   const textY = cyr - ro * 0.28;
   ctx.fillText(Number.isInteger(value) ? value : Number(value).toFixed(1), cxr, textY);
 
   // ── Unit text (below value) ──
   const unitFontSize = Math.max(9, Math.floor(ro * 0.19));
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.font = `400 ${unitFontSize}px Inter, sans-serif`;
+  ctx.fillStyle = isLight ? '#475569' : 'rgba(255,255,255,0.6)';
+  ctx.font = `500 ${unitFontSize}px Inter, sans-serif`;
   ctx.fillText(unit, cxr, textY + valueFontSize * 0.85);
 
   // ── Min / Max edge labels ──
   const edgeFontSize = Math.max(8, Math.floor(ro * 0.17));
-  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  ctx.fillStyle = isLight ? '#94A3B8' : 'rgba(255,255,255,0.35)';
   ctx.font = `400 ${edgeFontSize}px Inter, sans-serif`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
@@ -713,7 +729,7 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
 
   // ── Label (sensor name) below arc, centered ──
   const labelFontSize = Math.max(9, Math.floor(ro * 0.18));
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillStyle = isLight ? '#475569' : 'rgba(255,255,255,0.6)';
   ctx.font = `600 ${labelFontSize}px Inter, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -721,19 +737,19 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
 }
 
 const PM25_RANGES = [
-  { min: 0,  max: 12,   color: '#4ade80' },
-  { min: 12, max: 35,   color: '#fbbf24' },
-  { min: 35, max: 9999, color: '#f87171' },
+  { min: 0,  max: 12,   color: '#0D9488' },
+  { min: 12, max: 35,   color: '#0284C7' },
+  { min: 35, max: 9999, color: '#C36D4B' },
 ];
 const CO2_RANGES = [
-  { min: 0,    max: 800,  color: '#4ade80' },
-  { min: 800,  max: 1000, color: '#fbbf24' },
-  { min: 1000, max: 9999, color: '#f87171' },
+  { min: 0,    max: 800,  color: '#0D9488' },
+  { min: 800,  max: 1000, color: '#0284C7' },
+  { min: 1000, max: 9999, color: '#C36D4B' },
 ];
 const TEMP_RANGES = [
-  { min: 0,  max: 26,   color: '#38bdf8' },
-  { min: 26, max: 30,   color: '#fbbf24' },
-  { min: 30, max: 9999, color: '#f87171' },
+  { min: 0,  max: 26,   color: '#0D9488' },
+  { min: 26, max: 30,   color: '#0284C7' },
+  { min: 30, max: 9999, color: '#C36D4B' },
 ];
 
 function refreshGauges(pm25, co2, temp) {
@@ -763,11 +779,21 @@ function updateTrendChart() {
   const ctx = $('trendChart');
   if (!ctx) return;
 
+  const theme = document.documentElement.getAttribute('data-theme') || 'light';
+  const isLight = theme === 'light';
+  const textColor = isLight ? '#475569' : 'rgba(255,255,255,0.6)';
+  const gridColor = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)';
+
   if (STATE.trendChart) {
     STATE.trendChart.data.labels                  = [...STATE.historyLabels];
     STATE.trendChart.data.datasets[0].data        = [...STATE.historyPM25];
-    STATE.trendChart.data.datasets[1].data        = [...STATE.historyCO2].map(v => v / 10); // scale
+    STATE.trendChart.data.datasets[1].data        = [...STATE.historyCO2].map(v => v / 10);
     STATE.trendChart.data.datasets[2].data        = [...STATE.historyTemp];
+    STATE.trendChart.options.plugins.legend.labels.color = textColor;
+    STATE.trendChart.options.scales.x.ticks.color = textColor;
+    STATE.trendChart.options.scales.y.ticks.color = textColor;
+    STATE.trendChart.options.scales.x.grid.color  = gridColor;
+    STATE.trendChart.options.scales.y.grid.color  = gridColor;
     STATE.trendChart.update('active');
     return;
   }
@@ -780,9 +806,9 @@ function updateTrendChart() {
         {
           label: 'PM2.5 (µg/m³)',
           data:  [...STATE.historyPM25],
-          borderColor: '#4ade80',
-          backgroundColor: 'rgba(74,222,128,0.08)',
-          borderWidth: 2,
+          borderColor: '#0D9488',
+          backgroundColor: 'rgba(13,148,136,0.12)',
+          borderWidth: 2.5,
           pointRadius: 4,
           pointHoverRadius: 6,
           fill: true,
@@ -791,9 +817,9 @@ function updateTrendChart() {
         {
           label: 'CO2 ÷10 (ppm/10)',
           data:  STATE.historyCO2.map(v => v / 10),
-          borderColor: '#60a5fa',
-          backgroundColor: 'rgba(96,165,250,0.07)',
-          borderWidth: 2,
+          borderColor: '#0284C7',
+          backgroundColor: 'rgba(2,132,199,0.1)',
+          borderWidth: 2.5,
           pointRadius: 4,
           pointHoverRadius: 6,
           fill: true,
@@ -802,9 +828,9 @@ function updateTrendChart() {
         {
           label: 'Temp (°C)',
           data:  [...STATE.historyTemp],
-          borderColor: '#f97316',
-          backgroundColor: 'rgba(249,115,22,0.07)',
-          borderWidth: 2,
+          borderColor: '#C36D4B',
+          backgroundColor: 'rgba(195,109,75,0.1)',
+          borderWidth: 2.5,
           pointRadius: 4,
           pointHoverRadius: 6,
           fill: false,
@@ -819,16 +845,16 @@ function updateTrendChart() {
       plugins: {
         legend: {
           labels: {
-            color: 'rgba(255,255,255,0.6)',
+            color: textColor,
             font: { family: 'Inter', size: 12 },
             boxWidth: 14,
           },
         },
         tooltip: {
-          backgroundColor: 'rgba(10,8,32,0.92)',
-          titleColor: 'rgba(255,255,255,0.8)',
-          bodyColor:  'rgba(255,255,255,0.65)',
-          borderColor: 'rgba(99,102,241,0.35)',
+          backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(10,8,32,0.92)',
+          titleColor: isLight ? '#0F172A' : 'rgba(255,255,255,0.9)',
+          bodyColor:  isLight ? '#475569' : 'rgba(255,255,255,0.7)',
+          borderColor: isLight ? '#E2E8F0' : 'rgba(13,148,136,0.35)',
           borderWidth: 1,
           padding: 12,
           cornerRadius: 10,
@@ -838,12 +864,12 @@ function updateTrendChart() {
       },
       scales: {
         x: {
-          ticks: { color: 'rgba(255,255,255,0.35)', font: { size: 11, family: 'Inter' } },
-          grid:  { color: 'rgba(255,255,255,0.05)' },
+          ticks: { color: textColor, font: { size: 11, family: 'Inter' } },
+          grid:  { color: gridColor },
         },
         y: {
-          ticks: { color: 'rgba(255,255,255,0.35)', font: { size: 11, family: 'Inter' } },
-          grid:  { color: 'rgba(255,255,255,0.05)' },
+          ticks: { color: textColor, font: { size: 11, family: 'Inter' } },
+          grid:  { color: gridColor },
           beginAtZero: true,
         },
       },
