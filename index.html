@@ -43,6 +43,20 @@
     </button>
   </form>
 
+  <!-- User Session Card (shown after login) -->
+  <div class="user-session-card" id="userSessionCard" hidden>
+    <div class="session-user-info">
+      <div class="session-avatar">👤</div>
+      <div class="session-user-details">
+        <div class="session-user-name" id="sidebarUserDisplay">User</div>
+        <div class="session-user-role">Connected Account</div>
+      </div>
+    </div>
+    <button class="btn-logout" id="sidebarLogoutBtn" onclick="handleLogout()" title="ออกจากระบบ">
+      🚪 ออกจากระบบ (Logout)
+    </button>
+  </div>
+
   <hr class="divider" />
 
   <!-- Auto Refresh Toggle -->
@@ -77,9 +91,15 @@
       <span class="topbar-brand">🌿 AIIR IAQ Smart Dashboard</span>
     </div>
     <div class="topbar-right">
-      <button class="topbar-btn theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="เปลี่ยนธีม (Light / Dark)">
-        <span id="themeIcon">🌙</span>
-      </button>
+      <div class="topbar-user-area" id="topbarUserArea" hidden>
+        <div class="topbar-user-pill">
+          <span class="user-avatar-icon">👤</span>
+          <span class="user-display-name" id="topbarUserDisplay">User</span>
+        </div>
+        <button class="btn-topbar-logout" onclick="handleLogout()" title="ออกจากระบบ">
+          🚪 Logout
+        </button>
+      </div>
     </div>
   </div>
 
@@ -312,9 +332,16 @@
 
         </div>
 
-        <!-- Historical Trend Chart -->
-        <div class="glass-panel">
-          <div class="section-header">&#128200; แนวโน้มคุณภาพอากาศ (ล่าสุด 10 ครั้ง)</div>
+        <!-- Historical Trend Chart with Time Range Filter -->
+        <div class="glass-panel chart-panel">
+          <div class="chart-header-row">
+            <div class="section-header-no-margin">📈 แนวโน้มคุณภาพอากาศย้อนหลัง (Historical Line Chart)</div>
+            <div class="chart-time-filter" id="chartTimeFilter">
+              <button class="time-filter-btn active" id="tf-30m" onclick="setTimeFilter('30m')">⏱️ 30 นาที</button>
+              <button class="time-filter-btn" id="tf-1h" onclick="setTimeFilter('1h')">⏱️ 1 ชั่วโมง</button>
+              <button class="time-filter-btn" id="tf-all" onclick="setTimeFilter('all')">📊 ทั้งหมด (Realtime)</button>
+            </div>
+          </div>
           <div class="chart-wrap">
             <canvas id="trendChart"></canvas>
           </div>

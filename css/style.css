@@ -204,6 +204,13 @@ body.sidebar-collapsed .main-content {
   flex-direction: column;
   gap: 10px;
 }
+[hidden],
+.hidden,
+.login-form[hidden],
+.user-session-card[hidden],
+.topbar-user-area[hidden] {
+  display: none !important;
+}
 .form-label {
   font-size: 0.72rem;
   font-weight: 700;
@@ -421,6 +428,122 @@ body.sidebar-collapsed .main-content {
   letter-spacing: 0.03em;
 }
 
+/* User Session Card (Sidebar) */
+.user-session-card {
+  padding: 14px 16px;
+  background: var(--primary-bg);
+  border: 1px solid rgba(13, 148, 136, 0.25);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 16px;
+  animation: fadeInUp 0.3s ease;
+}
+
+.session-user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.session-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.session-user-name {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.session-user-role {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-top: 2px;
+}
+
+.btn-logout {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(195, 109, 75, 0.1);
+  border: 1px solid rgba(195, 109, 75, 0.3);
+  border-radius: 8px;
+  color: var(--tertiary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all var(--transition);
+}
+
+.btn-logout:hover {
+  background: var(--tertiary);
+  color: #ffffff;
+}
+
+/* Top Bar User Area */
+.topbar-user-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-user-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 50px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.user-avatar-icon {
+  font-size: 0.95rem;
+}
+
+.btn-topbar-logout {
+  padding: 6px 14px;
+  background: rgba(195, 109, 75, 0.1);
+  border: 1px solid rgba(195, 109, 75, 0.3);
+  border-radius: 50px;
+  color: var(--tertiary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition);
+}
+
+.btn-topbar-logout:hover {
+  background: var(--tertiary);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
 /* Welcome screen */
 .welcome-screen {
   display: flex;
@@ -490,7 +613,14 @@ body.sidebar-collapsed .main-content {
   font-size: 0.9rem;
   margin-top: 5px;
 }
-.hero-right { flex-shrink: 0; }
+.hero-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
 
 .btn-refresh {
   padding: 9px 20px;
@@ -504,6 +634,7 @@ body.sidebar-collapsed .main-content {
   cursor: pointer;
   transition: all var(--transition);
   display: flex; align-items: center; gap: 6px;
+  white-space: nowrap;
 }
 .btn-refresh:hover {
   background: var(--secondary-hover);
@@ -511,6 +642,59 @@ body.sidebar-collapsed .main-content {
   box-shadow: 0 6px 16px rgba(2, 132, 199, 0.3);
 }
 .btn-refresh.spinning #refreshIcon { animation: spin 0.6s linear infinite; display: inline-block; }
+
+/* Chart Panel & Time Filter Row */
+.chart-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.section-header-no-margin {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.chart-time-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  padding: 4px;
+  border-radius: 50px;
+}
+
+.time-filter-btn {
+  background: none;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 50px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.time-filter-btn:hover {
+  color: var(--text);
+  background: var(--primary-bg);
+}
+
+.time-filter-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.28);
+}
 
 /* Navigation tabs */
 .tabs-container { animation: fadeInUp 0.6s ease 0.1s both; }

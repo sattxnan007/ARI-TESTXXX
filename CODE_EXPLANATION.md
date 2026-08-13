@@ -63,14 +63,15 @@ c:\Users\tn_setthanan\Desktop\Copy\
 2. **`<aside class="sidebar" id="sidebar">` (บรรทัด 18–65)**:
    - **Header & Logo**: แสดงโลโก้ 🌿 และชื่อแบรนด์ AIIR Dashboard
    - **Status Badge (`#statusBadge`)**: แสดงสถานะการเชื่อมต่อ (Connected / Disconnected)
-   - **Login Form (`#loginForm`)**: ฟอร์มกรอก Username/Password พร้อมปุ่มแสดง/ซ่อน Password และปุ่มกด Login
+   - **Login Form (`#loginForm`)**: ฟอร์มกรอก Username/Password (จะถูกซ่อนอัตโนมัติเมื่อเข้าสู่ระบบสำเร็จ)
+   - **User Session Card (`#userSessionCard`)**: การ์ดแสดงชื่อผู้ใช้ที่กำลังเข้าสู่ระบบและปุ่ม Logout (แสดงผลเฉพาะเมื่อเข้าสู่ระบบสำเร็จ)
    - **Auto-Refresh Toggle (`#autoRefreshToggle`)**: สวิตช์เปิด/ปิดการดึงข้อมูลใหม่อัตโนมัติทุก 30 วินาที
    - **Last Update (`#lastUpdateWrap`)**: แสดงเวลาอัปเดตข้อมูลล่าสุดจากเซ็นเซอร์
 
-3. **`<main class="main-content" id="mainContent">` (บรรทัด 71–279)**:
-   - **Topbar (`.topbar`)**: แถบด้านบนแบบตรึง มีปุ่มสลับการพับ/กาง Sidebar (`#sidebarToggleBtn`) และปุ่มสลับธีม สว่าง/มืด (`#themeToggleBtn`)
+3. **`<main class="main-content" id="mainContent">`**:
+   - **Topbar (`.topbar`)**: แถบด้านบนแบบตรึง มีปุ่มสลับการพับ/กาง Sidebar (`#sidebarToggleBtn`) และส่วนแสดงชื่อบัญชีผู้ใช้มุมขวาบน (`#topbarUserArea`) พร้อมปุ่ม Logout
    - **Welcome Screen (`#welcomeScreen`)**: หน้าจอต้อนรับ แสดงเมื่อผู้ใช้ยังไม่ได้ Login
-   - **Dashboard Container (`#dashboard`)**: หน้าจอแสดงผลหลัก (เปิดใช้งานเมื่อ Login สำเร็จ):
+   - **Dashboard Container (`#dashboard`)**: หน้าจอแสดงผลหลัก (เปิดใช้งานและซ่อนหน้า Login เมื่อ Login สำเร็จ):
       - **Room Panel: SITE 4 ICT 401 (`#panel-site4`)**:
         - **Hero Gauge Cards (3 ตัววัดหลัก)**: รวมเกจครึ่งวงกลมและตัวเลขของ PM2.5, CO2, และ อุณหภูมิ ไว้ในการ์ดใบเดียวกันเพื่อความสมส่วน
         - **Environmental Telemetry Grid (4 ตัววัดสภาพแวดล้อม)**: PM10, ความชื้น, EVOC และ RSSI Signal จัดวางใน 4 คอลัมน์กะทัดรัด
@@ -96,18 +97,10 @@ c:\Users\tn_setthanan\Desktop\Copy\
 3. **Session Cookie Jar Setup**:
    - เรียก `session_start()` และกำหนดพาธเก็บไฟล์ Cookie Jar ที่ `/tmp/aiir_cookie_[session_id].txt` เพื่อใช้แชร์ Cookie ของเซสชัน cURL
 
-4. **Action Router & Helper Functions (`makeCurl()`, `doLogin()`, `getSpecData()`, `doLogout()`)**:
+4. **Action Router & Helper Functions (`makeCurl()`, `doLogin()`, `checkSession()`, `getSpecData()`, `doLogout()`)**:
+   - `checkSession()`: ตรวจสอบสถานะการเข้าสู่ระบบในเซสชัน PHP และส่งกลับสถานะ `loggedIn` พร้อมชื่อบัญชีผู้ใช้เมื่อมีการรีเฟรชหน้าจอ (F5)
    - `getSpecData()`: ดึงข้อมูลเฉพาะห้อง SITE 4 ICT 401 โดยตรวจสอบแคช `getSpecData_4_4` ก่อนยิง cURL
    - `clearAllCache()`: ล้างแคชทั้งหมดทันทีที่มีการ Login ใหม่ หรือ Logout ออกจากระบบ
-
-6. **`getSpecData()` (บรรทัด 175–297)**:
-   - ดึงข้อมูลระดับลึกเฉพาะ Site 4 (ห้อง ICT401)
-   - **ขั้นตอนที่ 1**: ยิง GET หน้า `siteData.php?id=4&type=4&sName=ICT401` เสมือนเบราว์เซอร์เปิดหน้าเว็บ
-   - **ขั้นตอนที่ 2**: ยิง POST ไปยัง `getSpecSiteData.php` พร้อม Form Data Payload `site=4&siteType=4`
-   - สกัดค่า `temp`, `humid`, `evoc`, `pm25`, `pm10`, `co2`, `rssi`, `lastUpdate` ส่งกลับแบบ JSON
-
-7. **`doLogout()` (บรรทัด 299–306)**:
-   - ลบไฟล์ Cookie Jar ชั่วคราว และทำลาย Session ใน PHP
 
 ---
 

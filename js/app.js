@@ -18,6 +18,8 @@ const CONFIG = {
 // App state
 const STATE = {
   isLoggedIn: false,
+  username: '',
+  timeFilter: '30m',
   site4Data: null,
   historyLogs: [],
   historyPM25: [],
@@ -49,7 +51,7 @@ function showToast(msg, type = 'info', duration = 3500) {
   t._timer = setTimeout(() => { t.className = 'toast'; }, duration);
 }
 
-// Sidebar and theme controls
+// Sidebar controls
 function toggleSidebar() {
   const sb = $('sidebar');
   const ov = $('overlay');
@@ -67,31 +69,6 @@ function toggleSidebarCollapse() {
   setTimeout(() => {
     if (STATE.site4Data) refreshGauges();
   }, 300);
-}
-
-function toggleTheme() {
-  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-  applyTheme(newTheme);
-}
-
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  const icon = $('themeIcon');
-  if (icon) icon.textContent = theme === 'light' ? '☀️' : '🌙';
-  localStorage.setItem('aiir_theme', theme);
-
-  if (STATE.site4Data) refreshGauges();
-  if (STATE.trendChart) {
-    STATE.trendChart.destroy();
-    STATE.trendChart = null;
-    updateTrendChart();
-  }
-}
-
-function initTheme() {
-  const savedTheme = localStorage.getItem('aiir_theme') || 'light';
-  applyTheme(savedTheme);
 }
 
 // Password visibility toggle
@@ -135,23 +112,99 @@ function stopAutoRefresh() {
   }
 }
 
-// Connection status display
-function setConnected(on) {
+// Connection status & user display handling
+function setConnected(on, username = '') {
   STATE.isLoggedIn = on;
   const badge = $('statusBadge');
   const dot = $('statusDot');
   const text = $('statusText');
+
+  const loginF = $('loginForm');
+  const userCard = $('userSessionCard');
+  const topArea = $('topbarUserArea');
+  const sideDisp = $('sidebarUserDisplay');
+  const topDisp = $('topbarUserDisplay');
+
   if (on) {
+    if (username) {
+      STATE.username = username;
+      localStorage.setItem('aiir_user', username);
+    } else {
+      STATE.username = localStorage.getItem('aiir_user') || STATE.username || 'Admin';
+    }
+
     if (badge) badge.className = 'status-badge badge-online';
     if (dot) dot.className = 'dot dot-green';
     if (text) text.textContent = 'Connected';
+
+    if (sideDisp) sideDisp.textContent = STATE.username;
+    if (topDisp) topDisp.textContent = STATE.username;
+
+    if (loginF) {
+      loginF.hidden = true;
+      loginF.style.setProperty('display', 'none', 'important');
+    }
+    if (userCard) {
+      userCard.hidden = false;
+      userCard.style.setProperty('display', 'flex', 'important');
+    }
+    if (topArea) {
+      topArea.hidden = false;
+      topArea.style.setProperty('display', 'flex', 'important');
+    }
+
+    // Auto-collapse sidebar on login for full dashboard view
+    document.body.classList.add('sidebar-collapsed');
+    const sb = $('sidebar');
+    if (sb) sb.classList.remove('open');
+
     showDashboard();
   } else {
+    STATE.username = '';
+    localStorage.removeItem('aiir_user');
+
     if (badge) badge.className = 'status-badge badge-offline';
     if (dot) dot.className = 'dot dot-red';
     if (text) text.textContent = 'Disconnected';
+
+    if (loginF) {
+      loginF.hidden = false;
+      loginF.style.setProperty('display', 'flex', 'important');
+    }
+    if (userCard) {
+      userCard.hidden = true;
+      userCard.style.setProperty('display', 'none', 'important');
+    }
+    if (topArea) {
+      topArea.hidden = true;
+      topArea.style.setProperty('display', 'none', 'important');
+    }
+
+    document.body.classList.remove('sidebar-collapsed');
     hideDashboard();
+    stopAutoRefresh();
   }
+}
+
+// Session Persistence Check on Startup (F5 Refresh)
+async function checkAuthOnStartup() {
+  const savedUser = localStorage.getItem('aiir_user');
+  try {
+    const res = await fetch('proxy.php?action=checkSession');
+    const json = await res.json();
+    if (json.ok && json.loggedIn) {
+      const activeUser = json.user || savedUser || 'Admin';
+      setConnected(true, activeUser);
+      fetchData();
+      if ($('autoRefreshToggle').checked) startAutoRefresh();
+      return;
+    }
+  } catch (e) {
+    console.warn('[AIIR Session Check]', e);
+  }
+
+  // If backend session not active
+  setConnected(false);
 }
 
 function updateLastUpdate(timeStr) {
@@ -173,7 +226,7 @@ async function handleLogin(e) {
   $('loginSpinner').hidden = false;
   $('loginBtn').disabled = true;
 
-  const ok = CONFIG.demoMode
+  const loginRes = CONFIG.demoMode
     ? await mockLogin(user, pass)
     : await realLogin(user, pass);
 
@@ -181,15 +234,27 @@ async function handleLogin(e) {
   $('loginSpinner').hidden = true;
   $('loginBtn').disabled = false;
 
-  if (ok) {
-    setConnected(true);
-    showToast('✅ เชื่อมต่อสำเร็จ! ดึงข้อมูลห้อง ICT401', 'success');
+  if (loginRes && loginRes.ok) {
+    const userAccount = loginRes.user || user;
+    setConnected(true, userAccount);
+    showToast(`✅ เชื่อมต่อสำเร็จ! ยินดีต้อนรับ ${userAccount}`, 'success');
     fetchData();
     if ($('autoRefreshToggle').checked) startAutoRefresh();
   } else {
     showToast('❌ Username หรือ Password ไม่ถูกต้อง', 'error');
     setConnected(false);
   }
+}
+
+async function handleLogout() {
+  showToast('กำลังออกจากระบบ...', 'info', 1500);
+  try {
+    await fetch('proxy.php?action=logout');
+  } catch (e) {
+    console.warn('[AIIR Logout]', e);
+  }
+  setConnected(false);
+  showToast('🚪 ออกจากระบบเรียบร้อยแล้ว', 'info');
 }
 
 function showDashboard() {
@@ -220,7 +285,7 @@ function hideDashboard() {
 
 async function mockLogin(user, pass) {
   await sleep(900);
-  return user === 'admin' && pass.length >= 1;
+  return { ok: user === 'admin' && pass.length >= 1, user: user };
 }
 
 async function realLogin(user, pass) {
@@ -232,10 +297,10 @@ async function realLogin(user, pass) {
     });
     const json = await res.json();
     if (!json.ok && json.error) console.warn('[AIIR Login]', json.error);
-    return json.ok === true;
+    return { ok: json.ok === true, user: json.user || user };
   } catch (e) {
     console.error('[AIIR Login] fetch error:', e);
-    return false;
+    return { ok: false, user: '' };
   }
 }
 
@@ -330,30 +395,50 @@ async function mockFetchSite4() {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// Time filter switch handler
+function setTimeFilter(mode) {
+  STATE.timeFilter = mode;
+  ['tf-30m', 'tf-1h', 'tf-all'].forEach(id => {
+    const btn = $(id);
+    if (btn) btn.classList.toggle('active', id === `tf-${mode}`);
+  });
+  updateTrendChart();
+  const label = mode === '30m' ? '30 นาทีล่าสุด' : mode === '1h' ? '1 ชั่วโมงล่าสุด' : 'เรียลไทม์ทั้งหมด';
+  showToast(`📊 แสดงกราฟช่วงเวลา: ${label}`, 'info', 2000);
+}
+
 // History data tracking
 function appendHistory(data) {
-  const label = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const nowTs = Date.now();
+  const label = new Date(nowTs).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  const pm25Val = parseFloat(data['PM2.5'] ?? data.pm25 ?? 0);
+  const co2Val  = parseFloat(data.CO2 ?? data.co2 ?? 0);
+  const tempVal = parseFloat(data.temp ?? 0);
+
   const push = (arr, val) => {
     arr.push(val ?? 0);
-    if (arr.length > CONFIG.trendMaxPoints) arr.shift();
+    if (arr.length > 200) arr.shift();
   };
   push(STATE.historyLabels, label);
-  push(STATE.historyPM25, data['PM2.5'] ?? data.pm25 ?? 0);
-  push(STATE.historyCO2, data.CO2 ?? data.co2 ?? 0);
-  push(STATE.historyTemp, data.temp ?? 0);
+  push(STATE.historyPM25, pm25Val);
+  push(STATE.historyCO2, co2Val);
+  push(STATE.historyTemp, tempVal);
 
   STATE.historyLogs.push({
+    timestamp: nowTs,
+    label: label,
     time: data.lastUpdate || nowStr(),
     site: 'Site 4 - ICT401',
-    pm25: data['PM2.5'] ?? 0,
-    pm10: data['PM10'] ?? 0,
-    co2: data.CO2 ?? 0,
-    temp: data.temp ?? 0,
-    humid: data.humid ?? 0,
-    evoc: data.evoc ?? 0,
-    rssi: data.RSSI ?? '0',
+    pm25: pm25Val,
+    pm10: parseFloat(data['PM10'] ?? data.pm10 ?? 0),
+    co2: co2Val,
+    temp: tempVal,
+    humid: parseFloat(data.humid ?? 0),
+    evoc: parseFloat(data.evoc ?? 0),
+    rssi: String(data.RSSI ?? data.rssi ?? '0'),
   });
-  if (STATE.historyLogs.length > 100) STATE.historyLogs.shift();
+  if (STATE.historyLogs.length > 200) STATE.historyLogs.shift();
 
   updateTrendChart();
 }
@@ -823,26 +908,37 @@ window.addEventListener('resize', () => {
   }, 200);
 });
 
-// Historical trend chart
+// Historical trend line chart
 function updateTrendChart() {
   const ctx = $('trendChart');
   if (!ctx) return;
 
-  const theme = document.documentElement.getAttribute('data-theme') || 'light';
-  const isLight = theme === 'light';
-  const textColor = isLight ? '#475569' : 'rgba(255,255,255,0.6)';
-  const gridColor = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)';
+  const textColor = '#475569';
+  const gridColor = 'rgba(0,0,0,0.06)';
+
+  const now = Date.now();
+  let logs = [...STATE.historyLogs];
+  if (STATE.timeFilter === '30m') {
+    const cutoff = now - 30 * 60 * 1000;
+    logs = logs.filter(l => l.timestamp >= cutoff);
+  } else if (STATE.timeFilter === '1h') {
+    const cutoff = now - 60 * 60 * 1000;
+    logs = logs.filter(l => l.timestamp >= cutoff);
+  }
+  if (logs.length === 0 && STATE.historyLogs.length > 0) {
+    logs = STATE.historyLogs.slice(-15);
+  }
+
+  const labels   = logs.map(l => l.label || (l.time ? (l.time.split(' ')[1] || l.time) : ''));
+  const pm25Data = logs.map(l => l.pm25);
+  const co2Data  = logs.map(l => l.co2);
+  const tempData = logs.map(l => l.temp);
 
   if (STATE.trendChart) {
-    STATE.trendChart.data.labels = [...STATE.historyLabels];
-    STATE.trendChart.data.datasets[0].data = [...STATE.historyPM25];
-    STATE.trendChart.data.datasets[1].data = [...STATE.historyCO2].map(v => v / 10);
-    STATE.trendChart.data.datasets[2].data = [...STATE.historyTemp];
-    STATE.trendChart.options.plugins.legend.labels.color = textColor;
-    STATE.trendChart.options.scales.x.ticks.color = textColor;
-    STATE.trendChart.options.scales.y.ticks.color = textColor;
-    STATE.trendChart.options.scales.x.grid.color = gridColor;
-    STATE.trendChart.options.scales.y.grid.color = gridColor;
+    STATE.trendChart.data.labels = labels;
+    STATE.trendChart.data.datasets[0].data = pm25Data;
+    STATE.trendChart.data.datasets[1].data = co2Data;
+    STATE.trendChart.data.datasets[2].data = tempData;
     STATE.trendChart.update('active');
     return;
   }
@@ -850,40 +946,43 @@ function updateTrendChart() {
   STATE.trendChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: [...STATE.historyLabels],
+      labels: labels,
       datasets: [
         {
           label: 'PM2.5 (µg/m³)',
-          data: [...STATE.historyPM25],
+          data: pm25Data,
+          yAxisID: 'y',
           borderColor: '#0D9488',
           backgroundColor: 'rgba(13,148,136,0.12)',
           borderWidth: 2.5,
-          pointRadius: 4,
+          pointRadius: 3.5,
           pointHoverRadius: 6,
           fill: true,
-          tension: 0.4,
+          tension: 0.38,
         },
         {
-          label: 'CO2 ÷10 (ppm/10)',
-          data: STATE.historyCO2.map(v => v / 10),
+          label: 'CO2 (ppm)',
+          data: co2Data,
+          yAxisID: 'yCO2',
           borderColor: '#0284C7',
-          backgroundColor: 'rgba(2,132,199,0.1)',
+          backgroundColor: 'rgba(2,132,199,0.08)',
           borderWidth: 2.5,
-          pointRadius: 4,
+          pointRadius: 3.5,
           pointHoverRadius: 6,
           fill: true,
-          tension: 0.4,
+          tension: 0.38,
         },
         {
-          label: 'Temp (°C)',
-          data: [...STATE.historyTemp],
-          borderColor: '#C36D4B',
-          backgroundColor: 'rgba(195,109,75,0.1)',
+          label: 'อุณหภูมิ (°C)',
+          data: tempData,
+          yAxisID: 'y',
+          borderColor: '#D97706',
+          backgroundColor: 'rgba(217,119,6,0.08)',
           borderWidth: 2.5,
-          pointRadius: 4,
+          pointRadius: 3.5,
           pointHoverRadius: 6,
           fill: false,
-          tension: 0.4,
+          tension: 0.38,
         },
       ],
     },
@@ -895,15 +994,16 @@ function updateTrendChart() {
         legend: {
           labels: {
             color: textColor,
-            font: { family: 'Inter', size: 12 },
+            font: { family: 'Inter', size: 12, weight: '600' },
             boxWidth: 14,
+            usePointStyle: true,
           },
         },
         tooltip: {
-          backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(10,8,32,0.92)',
-          titleColor: isLight ? '#0F172A' : 'rgba(255,255,255,0.9)',
-          bodyColor: isLight ? '#475569' : 'rgba(255,255,255,0.7)',
-          borderColor: isLight ? '#E2E8F0' : 'rgba(13,148,136,0.35)',
+          backgroundColor: 'rgba(15,23,42,0.92)',
+          titleColor: '#FFFFFF',
+          bodyColor: '#E2E8F0',
+          borderColor: 'rgba(13,148,136,0.4)',
           borderWidth: 1,
           padding: 12,
           cornerRadius: 10,
@@ -917,9 +1017,22 @@ function updateTrendChart() {
           grid: { color: gridColor },
         },
         y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          title: { display: true, text: 'PM2.5 (µg/m³) / อุณหภูมิ (°C)', color: textColor, font: { size: 11, family: 'Inter', weight: '600' } },
           ticks: { color: textColor, font: { size: 11, family: 'Inter' } },
           grid: { color: gridColor },
           beginAtZero: true,
+        },
+        yCO2: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          title: { display: true, text: 'CO2 (ppm)', color: '#0284C7', font: { size: 11, family: 'Inter', weight: '600' } },
+          ticks: { color: '#0284C7', font: { size: 11, family: 'Inter' } },
+          grid: { drawOnChartArea: false },
+          beginAtZero: false,
         },
       },
     },
@@ -963,7 +1076,7 @@ function downloadCSV() {
 
 // Initializer
 document.addEventListener('DOMContentLoaded', () => {
-  initTheme();
+  checkAuthOnStartup();
 
   let resizeTimer;
   window.addEventListener('resize', () => {

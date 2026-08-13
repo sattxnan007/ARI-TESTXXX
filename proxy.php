@@ -183,10 +183,11 @@ function doLogin(): void {
 
     if ($loggedIn) {
         $_SESSION['aiir_logged_in'] = true;
+        $_SESSION['aiir_user'] = $user;
         clearAllCache();
     }
 
-    echo json_encode(['ok' => $loggedIn]);
+    echo json_encode(['ok' => $loggedIn, 'user' => $user]);
 }
 
 function getSiteData(): void {
@@ -378,10 +379,21 @@ function getSpecData(): void {
     echo json_encode($response);
 }
 
+function checkSession(): void {
+    $loggedIn = !empty($_SESSION['aiir_logged_in']);
+    $user     = $_SESSION['aiir_user'] ?? '';
+    echo json_encode([
+        'ok'       => $loggedIn,
+        'loggedIn' => $loggedIn,
+        'user'     => $user,
+    ]);
+}
+
 function doLogout(): void {
     global $cookieFile;
     if (file_exists($cookieFile)) @unlink($cookieFile);
     clearAllCache();
+    unset($_SESSION['aiir_user']);
     $_SESSION['aiir_logged_in'] = false;
     session_destroy();
     echo json_encode(['ok' => true]);
@@ -393,10 +405,11 @@ checkRateLimit();
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 switch ($action) {
-    case 'login':       doLogin();       break;
-    case 'getSiteData': getSiteData();   break;
-    case 'getSpecData': getSpecData();   break;
-    case 'logout':      doLogout();      break;
+    case 'login':        doLogin();        break;
+    case 'checkSession': checkSession();   break;
+    case 'getSiteData':  getSiteData();    break;
+    case 'getSpecData':  getSpecData();    break;
+    case 'logout':       doLogout();       break;
     default:
         echo json_encode(['ok' => false, 'error' => 'Unknown action: ' . htmlspecialchars($action)]);
         break;
