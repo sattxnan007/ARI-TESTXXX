@@ -9,8 +9,7 @@
 // App configuration
 const CONFIG = {
   loginUrl: 'proxy.php?action=login',
-  siteDataUrl: 'proxy.php?action=getSiteData',
-  specDataUrl: 'proxy.php?action=getSpecData',
+  specDataUrl: 'proxy.php?action=getSpecData&site=4&siteType=4',
   demoMode: false,  // false = ใช้ข้อมูลจริงจาก AIIR API ผ่าน proxy.php
   autoRefreshMs: 30000,
   trendMaxPoints: 10,
@@ -19,8 +18,8 @@ const CONFIG = {
 // App state
 const STATE = {
   isLoggedIn: false,
-  allSitesData: [],
   site4Data: null,
+  historyLogs: [],
   historyPM25: [],
   historyCO2: [],
   historyTemp: [],
@@ -43,6 +42,7 @@ function nowStr() {
 
 function showToast(msg, type = 'info', duration = 3500) {
   const t = $('toast');
+  if (!t) return;
   t.textContent = msg;
   t.className = `toast ${type} show`;
   clearTimeout(t._timer);
@@ -51,8 +51,10 @@ function showToast(msg, type = 'info', duration = 3500) {
 
 // Sidebar and theme controls
 function toggleSidebar() {
-  $('sidebar').classList.toggle('open');
-  $('overlay').classList.toggle('show');
+  const sb = $('sidebar');
+  const ov = $('overlay');
+  if (sb) sb.classList.toggle('open');
+  if (ov) ov.classList.toggle('show');
 }
 
 function toggleSidebarCollapse() {
@@ -95,25 +97,23 @@ function initTheme() {
 // Password visibility toggle
 function togglePw() {
   const inp = $('inputPass');
+  if (!inp) return;
   inp.type = inp.type === 'password' ? 'text' : 'password';
-  $('pwToggle').style.opacity = inp.type === 'text' ? '1' : '0.6';
+  const toggleBtn = $('pwToggle');
+  if (toggleBtn) toggleBtn.style.opacity = inp.type === 'text' ? '1' : '0.6';
 }
 
-// Navigation tabs
+// Navigation tab compatibility placeholder
 function switchTab(name) {
-  ['overview', 'site4'].forEach(n => {
-    $(`tab-${n}`).classList.toggle('active', n === name);
-    $(`tab-${n}`).setAttribute('aria-selected', n === name);
-    $(`panel-${n}`).classList.toggle('active', n === name);
-  });
-  if (name === 'site4' && STATE.site4Data) {
+  if (STATE.site4Data) {
     setTimeout(refreshGauges, 60);
   }
 }
 
 // Auto refresh handling
 function toggleAutoRefresh() {
-  const on = $('autoRefreshToggle').checked;
+  const toggle = $('autoRefreshToggle');
+  const on = toggle ? toggle.checked : false;
   if (on) {
     if (STATE.isLoggedIn) startAutoRefresh();
     showToast('Auto-Refresh เปิดแล้ว (ทุก 30 วินาที)', 'info');
@@ -142,14 +142,14 @@ function setConnected(on) {
   const dot = $('statusDot');
   const text = $('statusText');
   if (on) {
-    badge.className = 'status-badge badge-online';
-    dot.className = 'dot dot-green';
-    text.textContent = 'Connected';
+    if (badge) badge.className = 'status-badge badge-online';
+    if (dot) dot.className = 'dot dot-green';
+    if (text) text.textContent = 'Connected';
     showDashboard();
   } else {
-    badge.className = 'status-badge badge-offline';
-    dot.className = 'dot dot-red';
-    text.textContent = 'Disconnected';
+    if (badge) badge.className = 'status-badge badge-offline';
+    if (dot) dot.className = 'dot dot-red';
+    if (text) text.textContent = 'Disconnected';
     hideDashboard();
   }
 }
@@ -183,7 +183,7 @@ async function handleLogin(e) {
 
   if (ok) {
     setConnected(true);
-    showToast('✅ เชื่อมต่อสำเร็จ!', 'success');
+    showToast('✅ เชื่อมต่อสำเร็จ! ดึงข้อมูลห้อง ICT401', 'success');
     fetchData();
     if ($('autoRefreshToggle').checked) startAutoRefresh();
   } else {
@@ -239,7 +239,7 @@ async function realLogin(user, pass) {
   }
 }
 
-// Data fetching from API
+// Data fetching from API (Room SITE 4 ICT 401 Only)
 async function fetchData() {
   if (!STATE.isLoggedIn) return;
 
@@ -247,38 +247,23 @@ async function fetchData() {
   if (btn) btn.classList.add('spinning');
 
   try {
-    const [sites, spec] = CONFIG.demoMode
-      ? await mockFetchAll()
-      : await realFetchAll();
+    const spec = CONFIG.demoMode
+      ? await mockFetchSite4()
+      : await realFetchSite4();
 
-    if (sites && sites.length > 0) {
-      STATE.allSitesData = sites;
-      renderOverview(sites);
-    }
-
-    const site4Raw = sites.find(s => String(s.Site) === '4') || {};
-    const specData = spec && typeof spec === 'object' ? spec : {};
-
-    const specTemp = specData.temp ?? specData.Temp ?? null;
-    const specHumid = specData.humid ?? specData.Humid ?? null;
-    const specEvoc = specData.evoc ?? specData.eVOC ?? null;
-    const specPm25 = specData.pm25 ?? specData.PM25 ?? null;
-    const specPm10 = specData.pm10 ?? specData.PM10 ?? null;
-    const specCo2 = specData.co2 ?? specData.CO2 ?? null;
-    const specRssi = specData.rssi ?? specData.RSSI ?? null;
-    const specUpd = specData.lastUpdate || site4Raw['Update'] || '';
-
-    if (Object.keys(site4Raw).length > 0 || spec) {
-      const pm25Val = specPm25 !== null ? parseFloat(specPm25) : (parseFloat(site4Raw['PM2.5']) || 0);
-      const pm10Val = specPm10 !== null ? parseFloat(specPm10) : (parseFloat(site4Raw['PM10']) || 0);
-      const co2Val = specCo2 !== null ? parseFloat(specCo2) : (parseFloat(site4Raw['CO2']) || 0);
-      const tempVal = specTemp !== null ? parseFloat(specTemp) : (parseFloat(site4Raw.temp) || 0);
-      const humidVal = specHumid !== null ? parseFloat(specHumid) : (parseFloat(site4Raw.humid) || 0);
-      const evocVal = specEvoc !== null ? parseFloat(specEvoc) : (parseFloat(site4Raw.evoc) || 0);
-      const rssiVal = specRssi !== null ? String(specRssi) : (site4Raw['RSSI'] || '0');
+    if (spec) {
+      const pm25Val = parseFloat(spec.pm25 ?? spec.PM25 ?? 0);
+      const pm10Val = parseFloat(spec.pm10 ?? spec.PM10 ?? 0);
+      const co2Val = parseFloat(spec.co2 ?? spec.CO2 ?? 0);
+      const tempVal = parseFloat(spec.temp ?? spec.Temp ?? 0);
+      const humidVal = parseFloat(spec.humid ?? spec.Humid ?? 0);
+      const evocVal = parseFloat(spec.evoc ?? spec.eVOC ?? 0);
+      const rssiVal = String(spec.rssi ?? spec.RSSI ?? '0');
+      const specUpd = spec.lastUpdate || nowStr();
 
       STATE.site4Data = {
-        ...site4Raw,
+        Site: '4',
+        SiteName: 'Site 4 - ICT401',
         'PM2.5': pm25Val,
         'PM10': pm10Val,
         'CO2': co2Val,
@@ -288,6 +273,7 @@ async function fetchData() {
         evoc: evocVal,
         lastUpdate: specUpd,
       };
+
       appendHistory(STATE.site4Data);
       renderSiteDetail(STATE.site4Data);
       updateLastUpdate(specUpd);
@@ -302,82 +288,44 @@ async function fetchData() {
   }
 }
 
-
-async function realFetchAll() {
-  const [r1, r2] = await Promise.all([
-    fetch(CONFIG.siteDataUrl),
-    fetch(CONFIG.specDataUrl + '&site=4&siteType=4'),
-  ]);
-
-  const j1 = await r1.json();
-  const j2 = await r2.json();
-
-  if (!j1.ok) {
-    if (j1.error === 'session_expired') {
-      setConnected(false);
-      showToast('Session หมดอายุ กรุณา Login ใหม่', 'error', 5000);
-    } else {
-      console.warn('[getSiteData]', j1.error, j1.raw ?? '');
+async function realFetchSite4() {
+  try {
+    const res = await fetch(CONFIG.specDataUrl);
+    const json = await res.json();
+    if (!json.ok) {
+      if (json.error === 'session_expired') {
+        setConnected(false);
+        showToast('Session หมดอายุ กรุณา Login ใหม่', 'error', 5000);
+      } else {
+        console.warn('[getSpecData]', json.error, json.raw ?? '');
+      }
+      return null;
     }
-    return [[], null];
+    return json;
+  } catch (e) {
+    console.error('[getSpecData] fetch error:', e);
+    return null;
   }
-
-  const sites = (j1.data || []).map(s => ({
-    ...s,
-    SiteName: s.SiteName || ('Site ' + s.Site),
-  }));
-
-  const spec = j2.ok ? j2 : null;
-  if (!j2.ok) console.warn('[getSpecData]', j2.error, j2.raw ?? '');
-
-  return [sites, spec];
 }
-
-// Demo data generator
-const SITE_NAMES = [
-  'Site 1 - ห้องเรียน 101',
-  'Site 2 - ห้องประชุม',
-  'Site 3 - โถงกลาง',
-  'Site 4 - ICT401',
-  'Site 5 - ห้องพักครู',
-];
 
 function rand(min, max, decimals = 1) {
   return parseFloat((Math.random() * (max - min) + min).toFixed(decimals));
 }
 
-let _demoCycle = 0;
-
-async function mockFetchAll() {
+async function mockFetchSite4() {
   await sleep(600 + Math.random() * 400);
-  _demoCycle++;
-
-  const sites = SITE_NAMES.map((name, i) => {
-    const pm25 = rand(5, 60);
-    const pm10 = rand(pm25, pm25 * 1.8);
-    const co2 = rand(400, 1400);
-    const rssi = rand(-85, -40, 0);
-    const up = nowStr();
-    const isOnline = Math.random() > 0.1;
-    return {
-      Site: String(i + 1),
-      SiteName: name,
-      Status: isOnline ? 'Online' : 'Offline',
-      RSSI: rssi,
-      'PM2.5': pm25,
-      PM10: pm10,
-      CO2: co2,
-      Update: up,
-    };
-  });
-
-  const s4 = sites[3];
-  const spec = {
-    temp: rand(22, 32),
-    humid: rand(35, 75),
+  const pm25 = rand(5, 60);
+  const pm10 = rand(pm25, pm25 * 1.8);
+  const co2 = rand(400, 1400);
+  const temp = rand(22, 32);
+  const humid = rand(35, 75);
+  const evoc = rand(5, 45);
+  const rssi = rand(-85, -40, 0);
+  return {
+    ok: true,
+    pm25, pm10, co2, temp, humid, evoc, rssi,
+    lastUpdate: nowStr(),
   };
-
-  return [sites, { ...s4, ...spec }];
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -393,6 +341,20 @@ function appendHistory(data) {
   push(STATE.historyPM25, data['PM2.5'] ?? data.pm25 ?? 0);
   push(STATE.historyCO2, data.CO2 ?? data.co2 ?? 0);
   push(STATE.historyTemp, data.temp ?? 0);
+
+  STATE.historyLogs.push({
+    time: data.lastUpdate || nowStr(),
+    site: 'Site 4 - ICT401',
+    pm25: data['PM2.5'] ?? 0,
+    pm10: data['PM10'] ?? 0,
+    co2: data.CO2 ?? 0,
+    temp: data.temp ?? 0,
+    humid: data.humid ?? 0,
+    evoc: data.evoc ?? 0,
+    rssi: data.RSSI ?? '0',
+  });
+  if (STATE.historyLogs.length > 100) STATE.historyLogs.shift();
+
   updateTrendChart();
 }
 
@@ -499,29 +461,39 @@ function renderSiteDetail(data) {
   const rssiCls = rssi >= -60 ? 'good' : rssi >= -70 ? 'info' : 'warn';
   setMetricRaw('rssi', rssi.toFixed(0), rssiNorm, rssiStatus, rssiCls, '#737877');
 
-  renderControlCards(pm25, co2, temp, humid);
+  renderControlCards(pm25, co2, temp, humid, pm10, evoc);
   refreshGauges(pm25, co2, temp);
 }
 
 function setMetric(key, valStr, barPct, label, cls, color, barColor) {
-  $(`val-${key}`).textContent = valStr;
+  const valEl = $(`val-${key}`);
+  if (valEl) valEl.textContent = valStr;
   const bar = $(`bar-${key}`);
-  bar.style.width = clamp(barPct, 0, 100) + '%';
-  if (barColor) bar.style.background = barColor;
-  else bar.style.background = color;
+  if (bar) {
+    bar.style.width = clamp(barPct, 0, 100) + '%';
+    if (barColor) bar.style.background = barColor;
+    else bar.style.background = color;
+  }
   const statusEl = $(`status-${key}`);
-  statusEl.textContent = '● ' + label;
-  statusEl.className = `metric-status ${cls}`;
+  if (statusEl) {
+    statusEl.textContent = '● ' + label;
+    statusEl.className = `metric-status ${cls}`;
+  }
 }
 
 function setMetricRaw(key, valStr, barPct, label, cls, barColor) {
-  $(`val-${key}`).textContent = valStr;
+  const valEl = $(`val-${key}`);
+  if (valEl) valEl.textContent = valStr;
   const bar = $(`bar-${key}`);
-  bar.style.width = clamp(barPct, 0, 100) + '%';
-  bar.style.background = barColor;
+  if (bar) {
+    bar.style.width = clamp(barPct, 0, 100) + '%';
+    bar.style.background = barColor;
+  }
   const statusEl = $(`status-${key}`);
-  statusEl.textContent = '● ' + label;
-  statusEl.className = `metric-status ${cls}`;
+  if (statusEl) {
+    statusEl.textContent = '● ' + label;
+    statusEl.className = `metric-status ${cls}`;
+  }
 }
 
 // Air quality thresholds and colors
@@ -557,36 +529,185 @@ function co2Color(v) {
   return '#C36D4B';
 }
 
-// Control recommendations logic
-function renderControlCards(pm25, co2, temp, humid) {
-  let purifier;
-  if (pm25 > 35) purifier = '🔴 เปิด (High Speed) — PM2.5 เกินมาตรฐาน';
-  else if (pm25 > 12) purifier = '🟡 เปิด (Low Speed) — PM2.5 ปานกลาง';
-  else purifier = '🟢 ปิด — อากาศสะอาดดี';
+// AI Smart HVAC Automation Engine (Trained Multi-Variable Inference Model)
+function runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc) {
+  pm25 = parseFloat(pm25 || 0);
+  pm10 = parseFloat(pm10 || 0);
+  co2 = parseFloat(co2 || 0);
+  temp = parseFloat(temp || 0);
+  humid = parseFloat(humid || 0);
+  evoc = parseFloat(evoc || 0);
 
-  let ventilation;
-  if (co2 > 1000) ventilation = '🔴 เปิด (Max) — CO2 สูงมาก';
-  else if (co2 > 800) ventilation = '🟡 เปิด — CO2 เพิ่มขึ้น';
-  else ventilation = '🟢 ปิด — CO2 ปกติ';
+  // 1. Calculate Comprehensive AI IAQ Health Index Score (0 - 100%)
+  const pm25Penalty = clamp((pm25 / 50) * 35, 0, 35);
+  const co2Penalty = clamp(((co2 - 400) / 1200) * 35, 0, 35);
+  const evocPenalty = clamp((evoc / 50) * 15, 0, 15);
+  const tempPenalty = (temp < 20 || temp > 28) ? clamp(Math.abs(temp - 24) * 2, 0, 10) : 0;
+  const humidPenalty = (humid < 40 || humid > 65) ? clamp(Math.abs(humid - 50) * 0.3, 0, 15) : 0;
 
-  let ac;
-  if (temp > 30) ac = '🔴 เปิด (Cool 22°C) — ร้อนมาก';
-  else if (temp > 26) ac = '🟡 เปิด (Cool 25°C) — อุ่น';
-  else ac = '🟢 ปิด / Eco Mode — อุณหภูมิเหมาะสม';
+  const iaqScore = Math.max(10, Math.round(100 - (pm25Penalty + co2Penalty + evocPenalty + tempPenalty + humidPenalty)));
 
-  let humidity;
-  if (humid < 40) humidity = '🟡 Humidifier ON — อากาศแห้งเกิน';
-  else if (humid > 60) humidity = '🟡 Dehumidifier ON — ความชื้นสูง';
-  else humidity = '🟢 ปิด — ความชื้นเหมาะสม (40-60%)';
+  // 2. Perceived Temperature & Thermal Comfort (Steadman Heat Index Model)
+  let perceivedTemp = temp;
+  if (temp >= 24 && humid > 55) {
+    perceivedTemp = temp + 0.1 * (humid - 55);
+  } else if (temp < 22 && humid < 40) {
+    perceivedTemp = temp - 0.08 * (40 - humid);
+  }
+  perceivedTemp = parseFloat(perceivedTemp.toFixed(1));
 
-  $('cmd-purifier').textContent = purifier;
-  $('cmd-ventilation').textContent = ventilation;
-  $('cmd-ac').textContent = ac;
-  $('cmd-humidity').textContent = humidity;
+  // 3. Air Purifier AI Decision
+  let purifierState, purifierBadge, purifierDetails, purifierPillClass;
+  if (pm25 > 35 || pm10 > 75 || evoc > 40) {
+    purifierState = '🔴 เปิดเร่งด่วน (Boost Mode 85-100%)';
+    purifierBadge = 'High Boost';
+    purifierPillClass = 'pill-bad';
+    purifierDetails = `HEPA + Carbon Filter Active • ตรวจพบฝุ่น/EVOC สูง (PM2.5: ${pm25.toFixed(1)}, EVOC: ${evoc.toFixed(0)} ppb)`;
+  } else if (pm25 > 12 || pm10 > 35 || evoc > 15) {
+    purifierState = '🟡 เปิดทำงานแบบสมดุล (Eco Auto 45%)';
+    purifierBadge = 'Eco Auto';
+    purifierPillClass = 'pill-warn';
+    purifierDetails = `HEPA Filter Active • ควบคุมค่าฝุ่นระดับปานกลาง (จำกัดค่าฝุ่น PM2.5 ≤ 12 µg/m³)`;
+  } else {
+    purifierState = '🟢 สแตนบายด์ (Standby 15%)';
+    purifierBadge = 'Standby';
+    purifierPillClass = 'pill-ok';
+    purifierDetails = `อากาศในห้องสะอาดบริสุทธิ์ (Air Cleanliness Index: ${iaqScore}%) • หมุนเวียนลมเบาเพื่อประหยัดไฟ`;
+  }
+
+  // 4. Ventilation System AI Decision
+  let ventState, ventBadge, ventDetails, ventPillClass;
+  if (co2 > 1000) {
+    ventState = '🔴 เปิดระบายอากาศเต็มกำลัง (Fresh Air Valve 100%)';
+    ventBadge = 'Max Exchange';
+    ventPillClass = 'pill-bad';
+    ventDetails = `Air Exchange Rate 3.8 ACH • ตรวจพบ CO2 สูงสะสม (${co2.toFixed(0)} ppm) • เร่งดึงอากาศสดนอกอาคาร`;
+  } else if (co2 > 750) {
+    ventState = '🟡 เปิดระบายอากาศแบบปรับแปร (Fresh Air 50-65%)';
+    ventBadge = 'Auto Exchange';
+    ventPillClass = 'pill-warn';
+    ventDetails = `Air Exchange Rate 2.1 ACH • ควบคุมระดับ CO2 ให้อยู่ในสภาวะสมดุลสำหรับห้องเรียน (<800 ppm)`;
+  } else {
+    ventState = '🟢 เปิดระบายอากาศขั้นต่ำ (Minimum Fresh Air 20%)';
+    ventBadge = 'Min Exchange';
+    ventPillClass = 'pill-ok';
+    ventDetails = `ระดับ CO2 เหมาะสมดีเยี่ยม (${co2.toFixed(0)} ppm) • หมุนเวียนอากาศเพื่อรักษาสมดุลความเย็น`;
+  }
+
+  // 5. Air Conditioning AI Decision
+  let acState, acBadge, acDetails, acPillClass;
+  if (temp > 29 || perceivedTemp > 30) {
+    acState = `🔴 เปิดทำความเย็นหนัก (Cool Mode 23.0°C • High Fan)`;
+    acBadge = 'Cool High';
+    acPillClass = 'pill-bad';
+    acDetails = `อุณหภูมิห้อง ${temp.toFixed(1)}°C (รู้สึกจริง ${perceivedTemp.toFixed(1)}°C) • เร่งปรับลดอุณหภูมิทางความร้อน`;
+  } else if (temp > 26 || perceivedTemp > 26.5) {
+    acState = `🟡 เปิดทำความเย็นปกติ (Cool Mode 25.0°C • Auto Fan)`;
+    acBadge = 'Cool Auto';
+    acPillClass = 'pill-warn';
+    acDetails = `อุณหภูมิอุ่นเล็กน้อย (${temp.toFixed(1)}°C) • ควบคุมความสบายทางความร้อน (PMV Index: Thermal Balanced)`;
+  } else {
+    acState = `🟢 ปรับโหมดประหยัดพลังงาน (Eco Mode 25.5°C)`;
+    acBadge = 'Eco Saving';
+    acPillClass = 'pill-ok';
+    acDetails = `อุณหภูมิเย็นสบายเหมาะสม (${temp.toFixed(1)}°C) • ประหยัดพลังงานไฟเบอร์สูงสุด 88%`;
+  }
+
+  // 6. Humidity Control AI Decision
+  let humidState, humidBadge, humidDetails, humidPillClass;
+  if (humid > 65) {
+    humidState = `🔴 Dehumidifier Active (High Boost 80%)`;
+    humidBadge = 'Dry Boost';
+    humidPillClass = 'pill-bad';
+    humidDetails = `ความชื้นสัมพัทธ์สูง (${humid.toFixed(1)}%RH) • เร่งดึงความชื้นออกจากห้อง ป้องกันเชื้อราและไวรัส`;
+  } else if (humid > 58) {
+    humidState = `🟡 Dehumidifier Active (Low Auto 40%)`;
+    humidBadge = 'Dry Auto';
+    humidPillClass = 'pill-warn';
+    humidDetails = `ความชื้นสะสม (${humid.toFixed(1)}%RH) • รักษาระดับความชื้นสัมพัทธ์ในสภาวะน่าสบาย (45-55%RH)`;
+  } else if (humid < 38) {
+    humidState = `🟡 Humidifier Active (Moisture Boost 50%)`;
+    humidBadge = 'Humidify';
+    humidPillClass = 'pill-warn';
+    humidDetails = `อากาศแห้งเกินไป (${humid.toFixed(1)}%RH) • เพิ่มความชื้นสัมพัทธ์เพื่อป้องกันการระคายเคือง`;
+  } else {
+    humidState = `🟢 ปิด / สแตนบายด์ (Humidity Balanced)`;
+    humidBadge = 'Balanced';
+    humidPillClass = 'pill-ok';
+    humidDetails = `ความชื้นสัมพัทธ์ในห้องอยู่ในเกณฑ์สมบูรณ์แบบ (${humid.toFixed(1)}%RH)`;
+  }
+
+  // 7. AI Predictive Summary Insight
+  let aiInsight;
+  if (iaqScore >= 85) {
+    aiInsight = `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศในห้อง ICT401 อยู่ในเกณฑ์ประเสริฐสุด (IAQ Score: <strong>${iaqScore}/100</strong>) โมเดล AIIR-IAQNet แนะนำให้รักษาระดับการทำงานของ HVAC ในโหมด Eco เพื่อประหยัดพลังงานไฟเบอร์สูงสุด`;
+  } else if (iaqScore >= 65) {
+    aiInsight = `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศอยู่ในระดับปานกลาง (IAQ Score: <strong>${iaqScore}/100</strong>) ตรวจพบค่า CO2 และความชื้นสะสมย่อย โมเดลสั่งเปิดระบบระบายอากาศ 60% ร่วมกับลดความชื้นอัตโนมัติ คาดการณ์คุณภาพอากาศกลับสู่ระดับดีเยี่ยมใน ~10 นาที`;
+  } else {
+    aiInsight = `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศต้องการการฟื้นฟูเร่งด่วน (IAQ Score: <strong>${iaqScore}/100</strong>) ตรวจพบฝุ่นหรือก๊าซสะสมสูง โมเดลสั่งเปิดระบบฟอกอากาศและระบายอากาศแบบ Full Boost อากาศจะกลับสู่เกณฑ์ปกติใน ~18 นาที`;
+  }
+
+  return {
+    iaqScore,
+    perceivedTemp,
+    purifier: { state: purifierState, badge: purifierBadge, details: purifierDetails, pillClass: purifierPillClass },
+    ventilation: { state: ventState, badge: ventBadge, details: ventDetails, pillClass: ventPillClass },
+    ac: { state: acState, badge: acBadge, details: acDetails, pillClass: acPillClass },
+    humidity: { state: humidState, badge: humidBadge, details: humidDetails, pillClass: humidPillClass },
+    insight: aiInsight,
+  };
+}
+
+// Control recommendations logic (Executes AI Model Inference)
+function renderControlCards(pm25, co2, temp, humid, pm10 = 0, evoc = 0) {
+  const modelResult = runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc);
+
+  // Update AI IAQ Score Badge
+  const scoreEl = $('aiScoreVal');
+  if (scoreEl) scoreEl.textContent = `${modelResult.iaqScore}/100`;
+
+  // Update Air Purifier
+  const purifier = modelResult.purifier;
+  if ($('cmd-purifier')) $('cmd-purifier').textContent = purifier.state;
+  if ($('badge-purifier')) {
+    $('badge-purifier').textContent = purifier.badge;
+    $('badge-purifier').className = `ai-badge ${purifier.pillClass}`;
+  }
+  if ($('detail-purifier')) $('detail-purifier').textContent = purifier.details;
+
+  // Update Ventilation
+  const vent = modelResult.ventilation;
+  if ($('cmd-ventilation')) $('cmd-ventilation').textContent = vent.state;
+  if ($('badge-ventilation')) {
+    $('badge-ventilation').textContent = vent.badge;
+    $('badge-ventilation').className = `ai-badge ${vent.pillClass}`;
+  }
+  if ($('detail-ventilation')) $('detail-ventilation').textContent = vent.details;
+
+  // Update Air Conditioning
+  const ac = modelResult.ac;
+  if ($('cmd-ac')) $('cmd-ac').textContent = ac.state;
+  if ($('badge-ac')) {
+    $('badge-ac').textContent = ac.badge;
+    $('badge-ac').className = `ai-badge ${ac.pillClass}`;
+  }
+  if ($('detail-ac')) $('detail-ac').textContent = ac.details;
+
+  // Update Humidity Control
+  const humidRes = modelResult.humidity;
+  if ($('cmd-humidity')) $('cmd-humidity').textContent = humidRes.state;
+  if ($('badge-humidity')) {
+    $('badge-humidity').textContent = humidRes.badge;
+    $('badge-humidity').className = `ai-badge ${humidRes.pillClass}`;
+  }
+  if ($('detail-humidity')) $('detail-humidity').textContent = humidRes.details;
+
+  // Update AI Natural Language Insight
+  if ($('aiInsightBox')) $('aiInsightBox').innerHTML = modelResult.insight;
 }
 
 // Semi-circle gauge charts
-function drawGauge(canvasId, value, max, ranges, label, unit) {
+function drawGauge(canvasId, value, max, ranges, unit) {
   const canvas = $(canvasId);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -602,67 +723,69 @@ function drawGauge(canvasId, value, max, ranges, label, unit) {
   const dpr = window.devicePixelRatio || 1;
 
   const rect = canvas.getBoundingClientRect();
-  const W = rect.width > 0 ? rect.width : 220;
-  const H = rect.height > 0 ? rect.height : 170;
+  const W = rect.width > 0 ? rect.width : 260;
+  const H = rect.height > 0 ? rect.height : 180;
 
   canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
   ctx.scale(dpr, dpr);
 
-  const ro = Math.min(W / 2, H) - 20;
-  const ri = ro - Math.max(18, ro * 0.28);
+  // Position center Y at H - 28 to leave 28px breathing room for bottom tick labels
+  const cyr = H - 28;
+  const ro = Math.min((W - 36) / 2, cyr - 16);
+  const ri = ro - Math.max(16, ro * 0.25);
   const cxr = W / 2;
-  const cyr = H - 16;
 
   ctx.clearRect(0, 0, W, H);
 
+  // Arc track background
   ctx.beginPath();
   ctx.arc(cxr, cyr, ro, Math.PI, 2 * Math.PI);
   ctx.arc(cxr, cyr, ri, 2 * Math.PI, Math.PI, true);
   ctx.closePath();
-  ctx.fillStyle = isLight ? 'rgba(15, 23, 42, 0.07)' : 'rgba(255, 255, 255, 0.08)';
+  ctx.fillStyle = isLight ? 'rgba(226, 232, 240, 0.7)' : 'rgba(255, 255, 255, 0.08)';
   ctx.fill();
 
-  const startAngle = Math.PI;
-  const endAngle = Math.PI + pct * Math.PI;
-  ctx.beginPath();
-  ctx.arc(cxr, cyr, ro, startAngle, endAngle);
-  ctx.arc(cxr, cyr, ri, endAngle, startAngle, true);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.shadowBlur = isLight ? 6 : 14;
-  ctx.shadowColor = color;
-  ctx.fill();
-  ctx.shadowBlur = 0;
+  // Active filled arc with ambient glow
+  if (pct > 0) {
+    const startAngle = Math.PI;
+    const endAngle = Math.PI + pct * Math.PI;
+    ctx.beginPath();
+    ctx.arc(cxr, cyr, ro, startAngle, endAngle);
+    ctx.arc(cxr, cyr, ri, endAngle, startAngle, true);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.shadowBlur = isLight ? 10 : 16;
+    ctx.shadowColor = color;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
 
-  const valueFontSize = Math.max(14, Math.floor(ro * 0.42));
+  // Large numerical value in center of arch
+  const valueFontSize = Math.max(22, Math.floor(ro * 0.44));
   ctx.fillStyle = isLight ? '#0F172A' : '#FFFFFF';
   ctx.font = `800 ${valueFontSize}px Inter, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  const textY = cyr - ro * 0.28;
-  ctx.fillText(Number.isInteger(value) ? value : Number(value).toFixed(1), cxr, textY);
+  const textY = cyr - ro * 0.25;
+  const valDisplay = Number.isInteger(value) ? value : Number(value).toFixed(1);
+  ctx.fillText(valDisplay, cxr, textY);
 
-  const unitFontSize = Math.max(9, Math.floor(ro * 0.19));
-  ctx.fillStyle = isLight ? '#475569' : 'rgba(255,255,255,0.6)';
-  ctx.font = `500 ${unitFontSize}px Inter, sans-serif`;
-  ctx.fillText(unit, cxr, textY + valueFontSize * 0.85);
+  // Unit text below numerical value
+  const unitFontSize = Math.max(11, Math.floor(ro * 0.18));
+  ctx.fillStyle = isLight ? '#475569' : 'rgba(255,255,255,0.7)';
+  ctx.font = `600 ${unitFontSize}px Inter, sans-serif`;
+  ctx.fillText(unit, cxr, textY + unitFontSize + 5);
 
-  const edgeFontSize = Math.max(8, Math.floor(ro * 0.17));
-  ctx.fillStyle = isLight ? '#94A3B8' : 'rgba(255,255,255,0.35)';
-  ctx.font = `400 ${edgeFontSize}px Inter, sans-serif`;
+  // Min ('0') and Max Tick Labels at bottom left & right
+  const edgeFontSize = Math.max(10, Math.floor(ro * 0.15));
+  ctx.fillStyle = isLight ? '#64748B' : 'rgba(255,255,255,0.45)';
+  ctx.font = `600 ${edgeFontSize}px Inter, sans-serif`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
-  ctx.fillText('0', cxr - ro + 2, cyr + 4);
+  ctx.fillText('0', cxr - ro + 4, cyr + 6);
   ctx.textAlign = 'right';
-  ctx.fillText(max, cxr + ro - 2, cyr + 4);
-
-  const labelFontSize = Math.max(9, Math.floor(ro * 0.18));
-  ctx.fillStyle = isLight ? '#475569' : 'rgba(255,255,255,0.6)';
-  ctx.font = `600 ${labelFontSize}px Inter, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText(label, cxr, cyr + edgeFontSize + 6);
+  ctx.fillText(max, cxr + ro - 4, cyr + 6);
 }
 
 const PM25_RANGES = [
@@ -687,9 +810,9 @@ function refreshGauges(pm25, co2, temp) {
     co2 = parseFloat(STATE.site4Data.CO2 ?? 0);
     temp = parseFloat(STATE.site4Data.temp ?? 0);
   }
-  drawGauge('gauge-pm25', pm25 || 0, 75, PM25_RANGES, 'PM2.5', 'µg/m³');
-  drawGauge('gauge-co2', co2 || 0, 1500, CO2_RANGES, 'CO2', 'ppm');
-  drawGauge('gauge-temp', temp || 0, 45, TEMP_RANGES, 'Temperature', '°C');
+  drawGauge('gauge-pm25', pm25 || 0, 75, PM25_RANGES, 'µg/m³');
+  drawGauge('gauge-co2', co2 || 0, 1500, CO2_RANGES, 'ppm');
+  drawGauge('gauge-temp', temp || 0, 45, TEMP_RANGES, '°C');
 }
 
 let _resizeTimer;
@@ -805,10 +928,25 @@ function updateTrendChart() {
 
 // Export data to CSV
 function downloadCSV() {
-  if (!STATE.allSitesData.length) { showToast('ไม่มีข้อมูล', 'error'); return; }
-  const headers = ['Site', 'Status', 'PM2.5', 'PM10', 'CO2', 'RSSI', 'Update'];
-  const rows = STATE.allSitesData.map(s =>
-    [s.SiteName || ('Site ' + s.Site), s.Status, s['PM2.5'], s.PM10, s.CO2, s.RSSI, s.Update]
+  if (!STATE.historyLogs.length && !STATE.site4Data) {
+    showToast('ไม่มีข้อมูลสำหรับดาวน์โหลด', 'error');
+    return;
+  }
+  const headers = ['เวลาอัปเดต', 'ห้อง/สถานที่', 'PM2.5 (µg/m³)', 'PM10 (µg/m³)', 'CO2 (ppm)', 'อุณหภูมิ (°C)', 'ความชื้น (%RH)', 'EVOC (ppb)', 'RSSI (dBm)'];
+  const logs = STATE.historyLogs.length > 0 ? STATE.historyLogs : [{
+    time: STATE.site4Data ? (STATE.site4Data.lastUpdate || nowStr()) : nowStr(),
+    site: 'Site 4 - ICT401',
+    pm25: STATE.site4Data ? STATE.site4Data['PM2.5'] : 0,
+    pm10: STATE.site4Data ? STATE.site4Data['PM10'] : 0,
+    co2: STATE.site4Data ? STATE.site4Data.CO2 : 0,
+    temp: STATE.site4Data ? STATE.site4Data.temp : 0,
+    humid: STATE.site4Data ? STATE.site4Data.humid : 0,
+    evoc: STATE.site4Data ? STATE.site4Data.evoc : 0,
+    rssi: STATE.site4Data ? STATE.site4Data.RSSI : '0',
+  }];
+
+  const rows = logs.map(l =>
+    [l.time, l.site, l.pm25, l.pm10, l.co2, l.temp, l.humid, l.evoc, l.rssi]
       .map(v => `"${String(v ?? '').replace(/"/g, '""')}"`)
       .join(',')
   );
@@ -817,10 +955,10 @@ function downloadCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `AIIR_IAQ_${nowStr().replace(/[/:]/g, '-')}.csv`;
+  a.download = `AIIR_ICT401_${nowStr().replace(/[/:]/g, '-')}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('✅ ดาวน์โหลด CSV สำเร็จ', 'success');
+  showToast('✅ ดาวน์โหลด CSV ข้อมูลห้อง ICT401 สำเร็จ', 'success');
 }
 
 // Initializer

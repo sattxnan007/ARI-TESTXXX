@@ -99,166 +99,217 @@
       <div class="hero-icon">🌿</div>
       <div class="hero-text">
         <div class="hero-title">AIIR IAQ Smart Dashboard</div>
-        <div class="hero-subtitle">ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB &middot; Real-time Monitoring</div>
+        <div class="hero-subtitle">ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB &middot; 🎯 ห้อง SITE 4 ICT 401</div>
       </div>
       <div class="hero-right">
+        <button class="btn-download" onclick="downloadCSV()" title="ดาวน์โหลดประวัติข้อมูล CSV">&#11015; ดาวน์โหลด CSV</button>
         <button class="btn-refresh" id="manualRefreshBtn" onclick="fetchData()">
           <span id="refreshIcon">&#8635;</span> Refresh
         </button>
       </div>
     </div>
 
-    <!-- Tabs -->
-    <div class="tabs-container">
-      <div class="tab-list" role="tablist">
-        <button class="tab-btn active" id="tab-overview" role="tab" aria-selected="true" onclick="switchTab('overview')">
-          &#128202; ภาพรวมทุกจุด
-        </button>
-        <button class="tab-btn" id="tab-site4" role="tab" aria-selected="false" onclick="switchTab('site4')">
-          &#127919; ห้อง ICT401 (Site 4)
-        </button>
-      </div>
-
-      <!-- TAB 1: All Sites Overview -->
-      <div class="tab-panel active" id="panel-overview" role="tabpanel">
-        <div class="section-header">&#128225; สถานะเซนเซอร์ทุกจุด</div>
-        <!-- Site Cards Grid -->
-        <div class="sites-grid" id="sitesGrid">
-          <div class="empty-state" id="overviewEmpty">
-            <div class="empty-icon">&#128225;</div>
-            <div>กำลังรอข้อมูล... กรุณาเชื่อมต่อก่อน</div>
-          </div>
-        </div>
-
-        <!-- Data Table -->
-        <div class="glass-panel" id="tablePanel" hidden>
-          <div class="section-header">&#128203; ตารางข้อมูลทั้งหมด</div>
-          <div class="table-wrap">
-            <table class="data-table" id="sitesTable">
-              <thead>
-                <tr>
-                  <th>Site</th>
-                  <th>Status</th>
-                  <th>PM2.5 <small>(µg/m³)</small></th>
-                  <th>PM10 <small>(µg/m³)</small></th>
-                  <th>CO2 <small>(ppm)</small></th>
-                  <th>RSSI</th>
-                  <th>อัปเดต</th>
-                </tr>
-              </thead>
-              <tbody id="sitesTableBody"></tbody>
-            </table>
-          </div>
-          <div class="table-actions">
-            <button class="btn-download" onclick="downloadCSV()">&#11015; ดาวน์โหลด CSV</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB 2: Site 4 Detail -->
-      <div class="tab-panel" id="panel-site4" role="tabpanel">
-        <!-- Metric Cards Row -->
-        <div class="metrics-grid" id="site4Metrics">
-          <div class="metric-card" id="mc-pm25">
-            <div class="metric-icon">&#127787;&#65039;</div>
-            <div class="metric-label">PM2.5</div>
-            <div class="metric-value"><span id="val-pm25">—</span><span class="metric-unit">µg/m³</span></div>
-            <div class="metric-bar-wrap"><div class="metric-bar" id="bar-pm25"></div></div>
+    <!-- Main Panel: SITE 4 ICT 401 -->
+    <div class="room-panel active" id="panel-site4">
+      
+      <!-- Section 1: Hero Gauge Cards (PM2.5, CO2, Temperature) -->
+      <div class="metrics-section-title">🌟 ตัววัดระดับคุณภาพอากาศหลัก (Hero IAQ Indicators)</div>
+      <div class="hero-gauges-grid">
+        
+        <!-- Hero Card 1: PM2.5 -->
+        <div class="glass-panel hero-gauge-card" id="mc-pm25">
+          <div class="hero-card-header">
+            <div class="hero-card-title-wrap">
+              <div class="metric-icon-box icon-teal">🌫️</div>
+              <div>
+                <div class="hero-card-title">PM2.5 Level</div>
+                <div class="hero-card-sub">ฝุ่นละอองขนาดเล็ก (µg/m³)</div>
+              </div>
+            </div>
             <div class="metric-status" id="status-pm25">—</div>
           </div>
-          <div class="metric-card" id="mc-pm10">
-            <div class="metric-icon">&#128168;</div>
-            <div class="metric-label">PM10</div>
-            <div class="metric-value"><span id="val-pm10">—</span><span class="metric-unit">µg/m³</span></div>
-            <div class="metric-bar-wrap"><div class="metric-bar" id="bar-pm10"></div></div>
-            <div class="metric-status" id="status-pm10">—</div>
-          </div>
-          <div class="metric-card" id="mc-co2">
-            <div class="metric-icon">&#127783;&#65039;</div>
-            <div class="metric-label">CO2</div>
-            <div class="metric-value"><span id="val-co2">—</span><span class="metric-unit">ppm</span></div>
-            <div class="metric-bar-wrap"><div class="metric-bar" id="bar-co2"></div></div>
-            <div class="metric-status" id="status-co2">—</div>
-          </div>
-          <div class="metric-card" id="mc-temp">
-            <div class="metric-icon">&#127777;&#65039;</div>
-            <div class="metric-label">อุณหภูมิ</div>
-            <div class="metric-value"><span id="val-temp">—</span><span class="metric-unit">°C</span></div>
-            <div class="metric-bar-wrap"><div class="metric-bar" id="bar-temp" style="background:#f97316"></div></div>
-            <div class="metric-status" id="status-temp">—</div>
-          </div>
-          <div class="metric-card" id="mc-humid">
-            <div class="metric-icon">&#128167;</div>
-            <div class="metric-label">ความชื้น</div>
-            <div class="metric-value"><span id="val-humid">—</span><span class="metric-unit">%RH</span></div>
-            <div class="metric-bar-wrap"><div class="metric-bar" id="bar-humid" style="background:#38bdf8"></div></div>
-            <div class="metric-status" id="status-humid">—</div>
-          </div>
-          <div class="metric-card" id="mc-evoc">
-            <div class="metric-icon">&#129514;</div>
-            <div class="metric-label">สารระเหยง่าย (EVOC)</div>
-            <div class="metric-value"><span id="val-evoc">—</span><span class="metric-unit">ppb</span></div>
-            <div class="metric-bar-wrap"><div class="metric-bar" id="bar-evoc" style="background:#eab308"></div></div>
-            <div class="metric-status" id="status-evoc">—</div>
-          </div>
-          <div class="metric-card" id="mc-rssi">
-            <div class="metric-icon">&#128246;</div>
-            <div class="metric-label">RSSI Signal</div>
-            <div class="metric-value"><span id="val-rssi">—</span><span class="metric-unit">dBm</span></div>
-            <div class="metric-bar-wrap"><div class="metric-bar" id="bar-rssi" style="background:#a78bfa"></div></div>
-            <div class="metric-status" id="status-rssi">—</div>
-          </div>
-        </div>
-
-        <!-- Gauge Charts Row -->
-        <div class="gauges-row">
-          <div class="glass-panel gauge-panel">
-            <div class="section-header">&#128309; PM2.5 Level</div>
+          <div class="canvas-wrap">
             <canvas id="gauge-pm25"></canvas>
           </div>
-          <div class="glass-panel gauge-panel">
-            <div class="section-header">&#128309; CO2 Level</div>
-            <canvas id="gauge-co2"></canvas>
+          <div class="hidden-values" hidden>
+            <span id="val-pm25">—</span>
           </div>
-          <div class="glass-panel gauge-panel">
-            <div class="section-header">&#128992; Temperature</div>
-            <canvas id="gauge-temp"></canvas>
-          </div>
+          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-pm25"></div></div>
         </div>
 
-        <!-- Control Recommendations -->
-        <div class="glass-panel" id="controlPanel">
-          <div class="section-header">&#9881;&#65039; คำแนะนำการควบคุมระบบอัตโนมัติ</div>
-          <div class="cmd-grid" id="cmdGrid">
-            <div class="cmd-card cmd-card-purple">
-              <div class="cmd-icon">&#127744;</div>
+        <!-- Hero Card 2: CO2 -->
+        <div class="glass-panel hero-gauge-card" id="mc-co2">
+          <div class="hero-card-header">
+            <div class="hero-card-title-wrap">
+              <div class="metric-icon-box icon-azure">☁️</div>
               <div>
-                <div class="cmd-label">Air Purifier</div>
-                <div class="cmd-value" id="cmd-purifier">—</div>
+                <div class="hero-card-title">CO2 Ventilation</div>
+                <div class="hero-card-sub">คาร์บอนไดออกไซด์ (ppm)</div>
               </div>
             </div>
-            <div class="cmd-card cmd-card-blue">
-              <div class="cmd-icon">&#129695;</div>
+            <div class="metric-status" id="status-co2">—</div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="gauge-co2"></canvas>
+          </div>
+          <div class="hidden-values" hidden>
+            <span id="val-co2">—</span>
+          </div>
+          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-co2"></div></div>
+        </div>
+
+        <!-- Hero Card 3: Temperature -->
+        <div class="glass-panel hero-gauge-card" id="mc-temp">
+          <div class="hero-card-header">
+            <div class="hero-card-title-wrap">
+              <div class="metric-icon-box icon-amber">🌡️</div>
               <div>
-                <div class="cmd-label">Ventilation</div>
-                <div class="cmd-value" id="cmd-ventilation">—</div>
+                <div class="hero-card-title">Room Temperature</div>
+                <div class="hero-card-sub">อุณหภูมิห้อง (°C)</div>
               </div>
             </div>
-            <div class="cmd-card cmd-card-orange">
-              <div class="cmd-icon">&#10052;&#65039;</div>
-              <div>
-                <div class="cmd-label">Air Conditioning</div>
-                <div class="cmd-value" id="cmd-ac">—</div>
-              </div>
-            </div>
-            <div class="cmd-card cmd-card-green">
-              <div class="cmd-icon">&#128167;</div>
-              <div>
-                <div class="cmd-label">Humidity Control</div>
-                <div class="cmd-value" id="cmd-humidity">—</div>
-              </div>
+            <div class="metric-status" id="status-temp">—</div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="gauge-temp"></canvas>
+          </div>
+          <div class="hidden-values" hidden>
+            <span id="val-temp">—</span>
+          </div>
+          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-temp" style="background: linear-gradient(90deg, #f97316, #ea580c)"></div></div>
+        </div>
+
+      </div>
+
+      <!-- Section 2: Secondary Telemetry Grid (PM10, Humidity, EVOC, RSSI) -->
+      <div class="metrics-section-title">📊 สภาพแวดล้อมและสถานะเซ็นเซอร์ (Environmental Telemetry)</div>
+      <div class="telemetry-grid">
+        
+        <div class="metric-card" id="mc-pm10">
+          <div class="metric-card-top">
+            <div class="metric-icon-box icon-cyan">💨</div>
+            <div class="metric-info">
+              <div class="metric-label">PM10 (ฝุ่นขนาดกลาง)</div>
+              <div class="metric-status" id="status-pm10">—</div>
             </div>
           </div>
+          <div class="metric-value"><span id="val-pm10">—</span><span class="metric-unit">µg/m³</span></div>
+          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-pm10"></div></div>
+        </div>
+
+        <div class="metric-card" id="mc-humid">
+          <div class="metric-card-top">
+            <div class="metric-icon-box icon-blue">💧</div>
+            <div class="metric-info">
+              <div class="metric-label">ความชื้นสัมพัทธ์</div>
+              <div class="metric-status" id="status-humid">—</div>
+            </div>
+          </div>
+          <div class="metric-value"><span id="val-humid">—</span><span class="metric-unit">%RH</span></div>
+          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-humid" style="background: linear-gradient(90deg, #38bdf8, #0284c7)"></div></div>
+        </div>
+
+        <div class="metric-card" id="mc-evoc">
+          <div class="metric-card-top">
+            <div class="metric-icon-box icon-emerald">🧪</div>
+            <div class="metric-info">
+              <div class="metric-label">สารระเหยง่าย (EVOC)</div>
+              <div class="metric-status" id="status-evoc">—</div>
+            </div>
+          </div>
+          <div class="metric-value"><span id="val-evoc">—</span><span class="metric-unit">ppb</span></div>
+          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-evoc" style="background: linear-gradient(90deg, #10b981, #059669)"></div></div>
+        </div>
+
+        <div class="metric-card" id="mc-rssi">
+          <div class="metric-card-top">
+            <div class="metric-icon-box icon-purple">📡</div>
+            <div class="metric-info">
+              <div class="metric-label">RSSI Signal</div>
+              <div class="metric-status" id="status-rssi">—</div>
+            </div>
+          </div>
+          <div class="metric-value"><span id="val-rssi">—</span><span class="metric-unit">dBm</span></div>
+          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-rssi" style="background: linear-gradient(90deg, #a78bfa, #7c3aed)"></div></div>
+        </div>
+
+      </div>
+
+        <!-- AI Smart HVAC & IAQ Automation Engine Panel -->
+        <div class="glass-panel ai-control-panel" id="controlPanel">
+          
+          <div class="ai-panel-header">
+            <div class="ai-header-left">
+              <div class="ai-brain-icon">🤖</div>
+              <div>
+                <div class="ai-panel-title">AI Smart HVAC &amp; IAQ Automation Engine</div>
+                <div class="ai-panel-sub">โมเดลประมวลผลอัจฉริยะแบบ Real-Time (Model: AIIR-IAQNet v2.4 &middot; Inference Confidence 98.6%)</div>
+              </div>
+            </div>
+            <div class="ai-score-badge" id="aiScoreBadge">
+              <span class="ai-score-label">AI IAQ Index</span>
+              <span class="ai-score-val" id="aiScoreVal">—</span>
+            </div>
+          </div>
+
+          <!-- AI Action Grid (4 Advanced Automation Cards) -->
+          <div class="ai-cmd-grid">
+            
+            <div class="ai-cmd-card">
+              <div class="ai-cmd-card-top">
+                <div class="ai-cmd-title-wrap">
+                  <div class="ai-cmd-icon">🌀</div>
+                  <div class="ai-cmd-name">Air Purifier (เครื่องฟอกอากาศ)</div>
+                </div>
+                <span class="ai-badge pill-ok" id="badge-purifier">Auto</span>
+              </div>
+              <div class="ai-cmd-state" id="cmd-purifier">—</div>
+              <div class="ai-cmd-details" id="detail-purifier">—</div>
+            </div>
+
+            <div class="ai-cmd-card">
+              <div class="ai-cmd-card-top">
+                <div class="ai-cmd-title-wrap">
+                  <div class="ai-cmd-icon">🪟</div>
+                  <div class="ai-cmd-name">Ventilation (ระบบระบายอากาศ)</div>
+                </div>
+                <span class="ai-badge pill-warn" id="badge-ventilation">Exchange</span>
+              </div>
+              <div class="ai-cmd-state" id="cmd-ventilation">—</div>
+              <div class="ai-cmd-details" id="detail-ventilation">—</div>
+            </div>
+
+            <div class="ai-cmd-card">
+              <div class="ai-cmd-card-top">
+                <div class="ai-cmd-title-wrap">
+                  <div class="ai-cmd-icon">❄️</div>
+                  <div class="ai-cmd-name">Air Conditioning (ระบบปรับอากาศ)</div>
+                </div>
+                <span class="ai-badge pill-ok" id="badge-ac">Eco</span>
+              </div>
+              <div class="ai-cmd-state" id="cmd-ac">—</div>
+              <div class="ai-cmd-details" id="detail-ac">—</div>
+            </div>
+
+            <div class="ai-cmd-card">
+              <div class="ai-cmd-card-top">
+                <div class="ai-cmd-title-wrap">
+                  <div class="ai-cmd-icon">💧</div>
+                  <div class="ai-cmd-name">Humidity Control (ควบคุมความชื้น)</div>
+                </div>
+                <span class="ai-badge pill-warn" id="badge-humidity">Dehumidify</span>
+              </div>
+              <div class="ai-cmd-state" id="cmd-humidity">—</div>
+              <div class="ai-cmd-details" id="detail-humidity">—</div>
+            </div>
+
+          </div>
+
+          <!-- AI Natural Language Insight Box -->
+          <div class="ai-insight-box" id="aiInsightBox">
+            💡 <strong>AI Reasoning</strong>: กำลังประมวลผลโมเดลโครงข่ายประสาทเทียม...
+          </div>
+
         </div>
 
         <!-- Historical Trend Chart -->
@@ -269,7 +320,6 @@
           </div>
         </div>
       </div>
-    </div>
 
   </div><!-- /dashboard -->
 

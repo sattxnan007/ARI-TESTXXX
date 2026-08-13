@@ -1,10 +1,8 @@
 <?php
 /**
- * proxy.php — AIIR IAQ API Proxy
- * จัดการ Login, Session Cookie, และดึงข้อมูล Sensor
+ * proxy.php — AIIR IAQ API Proxy & Anti-DoS Cache System
+ * จัดการ Login, Session Cookie, Server-Side Caching (5s TTL), และ Rate Limiting Anti-DoS
  * จาก emtrontech.com/AIIR/ แล้วส่งกลับเป็น JSON
- *
- * Mirrors logic จาก api.py (Python/Streamlit original)
  */
 
 // ---- CORS & Headers ----
@@ -18,29 +16,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// ---- Session สำหรับเก็บ Cookie jar ----
+// ---- Session & Cookie Settings ----
 session_start();
-
-// ---- Cookie jar path (เก็บ Session Cookie ของ AIIR) ----
 $cookieFile = sys_get_temp_dir() . '/aiir_cookie_' . session_id() . '.txt';
 
-// ---- Base URL ----
+// ---- Base Configuration ----
 define('AIIR_BASE', 'https://emtrontech.com/AIIR/');
+define('CACHE_TTL', 5);           // Cache TTL in seconds (Default: 5s)
+define('RATE_LIMIT_MAX', 60);     // Max allowed requests per minute per IP
+define('RATE_LIMIT_WINDOW', 60);  // Window size in seconds
 
-// ---- Action Router ----
-$action = $_GET['action'] ?? $_POST['action'] ?? '';
+// ---- Anti-DoS Rate Limiter ----
+function checkRateLimit(): void {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+    $rateFile = sys_get_temp_dir() . '/aiir_rate_' . md5($ip) . '.json';
+    $now = time();
+    $data = ['start' => $now, 'count' => 0];
 
-switch ($action) {
-    case 'login':      doLogin();    break;
-    case 'getSiteData': getSiteData(); break;
-    case 'getSpecData': getSpecData(); break;
-    case 'logout':     doLogout();   break;
-    default:
-        echo json_encode(['ok' => false, 'error' => 'Unknown action: ' . htmlspecialchars($action)]);
-        break;
+    if (file_exists($rateFile)) {
+        $content = @file_get_contents($rateFile);
+        $parsed = @json_decode($content, true);
+        if (is_array($parsed) && isset($parsed['start'], $parsed['count'])) {
+            if (($now - $parsed['start']) < RATE_LIMIT_WINDOW) {
+                $data = $parsed;
+            }
+        }
+    }
+
+    $data['count']++;
+    @file_put_contents($rateFile, json_encode($data), LOCK_EX);
+
+    if ($data['count'] > RATE_LIMIT_MAX) {
+        http_response_code(429);
+        header('Retry-After: ' . (RATE_LIMIT_WINDOW - ($now - $data['start'])));
+        echo json_encode([
+            'ok'    => false,
+            'error' => 'Rate limit exceeded. Anti-DoS protection active. Please wait a few seconds.',
+        ]);
+        exit;
+    }
 }
 
-// cURL helper function
+// ---- Cache Helpers ----
+function getCacheFilePath(string $key): string {
+    return sys_get_temp_dir() . '/aiir_cache_' . md5($key) . '.json';
+}
+
+function getFromCache(string $key): ?array {
+    $file = getCacheFilePath($key);
+    if (!file_exists($file)) return null;
+
+    $content = @file_get_contents($file);
+    if (!$content) return null;
+
+    $data = @json_decode($content, true);
+    if (!is_array($data) || !isset($data['timestamp'], $data['response'])) return null;
+
+    $age = time() - $data['timestamp'];
+    if ($age <= CACHE_TTL) {
+        $res = $data['response'];
+        $res['cached']   = true;
+        $res['cacheAge'] = $age;
+        return $res;
+    }
+
+    return null;
+}
+
+function saveToCache(string $key, array $response): void {
+    if (empty($response['ok'])) return;
+    $file = getCacheFilePath($key);
+    $data = [
+        'timestamp' => time(),
+        'response'  => $response,
+    ];
+    @file_put_contents($file, json_encode($data), LOCK_EX);
+}
+
+function clearAllCache(): void {
+    $pattern = sys_get_temp_dir() . '/aiir_cache_*.json';
+    $files = glob($pattern);
+    if (is_array($files)) {
+        foreach ($files as $f) {
+            if (file_exists($f)) @unlink($f);
+        }
+    }
+}
+
+// ---- cURL Helper Function ----
 function makeCurl(string $url, array $postData = [], array $extraHeaders = [], bool $followRedirect = true): array {
     global $cookieFile;
 
@@ -90,7 +153,7 @@ function makeCurl(string $url, array $postData = [], array $extraHeaders = [], b
     ];
 }
 
-// Login handler
+// ---- API Handlers ----
 function doLogin(): void {
     $raw   = file_get_contents('php://input');
     $body  = json_decode($raw, true) ?: [];
@@ -105,7 +168,6 @@ function doLogin(): void {
     $uHash = hash('sha256', $user);
     $pHash = hash('sha256', $pass);
 
-    // Step 1: POST to userAuthen.php
     $postData = ['u' => $uHash, 'p' => $pHash, 'd' => '0'];
     $r = makeCurl(AIIR_BASE . 'userAuthen.php', $postData, [
         'Referer: ' . AIIR_BASE . 'login.php',
@@ -116,20 +178,29 @@ function doLogin(): void {
         return;
     }
 
-    // Step 2: GET index.php เพื่อตรวจว่า Login สำเร็จ (session ต้องไม่ redirect ไป login.php)
     $check = makeCurl(AIIR_BASE . 'index.php', [], [], true);
     $loggedIn = stripos($check['finalUrl'], 'login.php') === false;
 
     if ($loggedIn) {
         $_SESSION['aiir_logged_in'] = true;
+        clearAllCache();
     }
 
     echo json_encode(['ok' => $loggedIn]);
 }
 
-// Get summary data for all sites
 function getSiteData(): void {
-    // POST to getSiteData.php (session cookie ส่งอัตโนมัติผ่าน cookie jar)
+    $cacheKey = 'getSiteData_all';
+
+    $cached = getFromCache($cacheKey);
+    if ($cached !== null) {
+        header('X-Cache: HIT');
+        echo json_encode($cached);
+        return;
+    }
+
+    header('X-Cache: MISS');
+
     $r = makeCurl(AIIR_BASE . 'getSiteData.php', ['dummy' => '1'], [
         'Referer: ' . AIIR_BASE . 'index.php',
     ]);
@@ -141,7 +212,6 @@ function getSiteData(): void {
 
     $text = trim($r['body'] ?? '');
 
-    // ถ้า response มี <html> → session หมดอายุ
     if (stripos(substr($text, 0, 100), '<html') !== false) {
         $_SESSION['aiir_logged_in'] = false;
         echo json_encode(['ok' => false, 'error' => 'session_expired']);
@@ -154,7 +224,6 @@ function getSiteData(): void {
         return;
     }
 
-    // แปลงเป็น format ที่ JS ต้องการ
     $records = [];
     foreach ($raw as $item) {
         $d = $item['data'] ?? [];
@@ -169,15 +238,26 @@ function getSiteData(): void {
         ];
     }
 
-    echo json_encode(['ok' => true, 'data' => $records]);
+    $response = ['ok' => true, 'data' => $records];
+    saveToCache($cacheKey, $response);
+    echo json_encode($response);
 }
 
-// Get detailed metrics for specific site
 function getSpecData(): void {
     $siteId   = $_GET['site'] ?? $_POST['site'] ?? '4';
     $siteType = $_GET['siteType'] ?? $_POST['siteType'] ?? $siteId;
 
-    // Step 1: GET siteData.php แบบ browser ปกติ
+    $cacheKey = "getSpecData_{$siteId}_{$siteType}";
+
+    $cached = getFromCache($cacheKey);
+    if ($cached !== null) {
+        header('X-Cache: HIT');
+        echo json_encode($cached);
+        return;
+    }
+
+    header('X-Cache: MISS');
+
     $pageUrl = AIIR_BASE . 'siteData.php?id=' . $siteId . '&type=' . $siteType . '&sName=ICT401';
     global $cookieFile;
     $ch1 = curl_init();
@@ -205,7 +285,6 @@ function getSpecData(): void {
 
     usleep(300000); // 300ms
 
-    // Step 2: POST getSpecSiteData.php — ใช้ payload site={id}&siteType={type} ตาม Network Tab ของระบบจริง
     $body   = 'site=' . urlencode($siteId) . '&siteType=' . urlencode($siteType);
     $apiUrl = AIIR_BASE . 'getSpecSiteData.php';
 
@@ -282,7 +361,7 @@ function getSpecData(): void {
     $rssi       = (string)($j['rssi'] ?? '');
     $lastUpdate = (string)($d['lastUpdate']  ?? $d['updateSite']  ?? '');
 
-    echo json_encode([
+    $response = [
         'ok'         => true,
         'temp'       => $temp,
         'humid'      => $humid,
@@ -293,14 +372,32 @@ function getSpecData(): void {
         'rssi'       => $rssi,
         'lastUpdate' => $lastUpdate,
         'raw'        => $d,
-    ]);
+    ];
+
+    saveToCache($cacheKey, $response);
+    echo json_encode($response);
 }
 
-// Logout handler
 function doLogout(): void {
     global $cookieFile;
     if (file_exists($cookieFile)) @unlink($cookieFile);
+    clearAllCache();
     $_SESSION['aiir_logged_in'] = false;
     session_destroy();
     echo json_encode(['ok' => true]);
+}
+
+// ---- Anti-DoS Check & Action Router ----
+checkRateLimit();
+
+$action = $_GET['action'] ?? $_POST['action'] ?? '';
+
+switch ($action) {
+    case 'login':       doLogin();       break;
+    case 'getSiteData': getSiteData();   break;
+    case 'getSpecData': getSpecData();   break;
+    case 'logout':      doLogout();      break;
+    default:
+        echo json_encode(['ok' => false, 'error' => 'Unknown action: ' . htmlspecialchars($action)]);
+        break;
 }

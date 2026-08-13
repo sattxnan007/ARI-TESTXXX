@@ -1,6 +1,6 @@
-# 🌿 AIIR IAQ Smart Dashboard (ICT BRB)
+# 🌿 AIIR IAQ Smart Dashboard (ICT BRB - Room SITE 4 ICT 401)
 
-ระบบติดตามและมอนิเตอร์คุณภาพอากาศภายในอาคาร **ICT BRB (Indoor Air Quality - IAQ)** แบบ Real-time พัฒนาขึ้นเพื่อเชื่อมต่อกับระบบ **Emtrontech AIIR API** โดยแสดงผลข้อมูลเซ็นเซอร์ตรวจวัดคุณภาพอากาศสำหรับห้อง **ICT401 (Site 4)** และภาพรวมเซ็นเซอร์ทุกจุดของอาคารอย่างแม่นยำ
+ระบบติดตามและมอนิเตอร์คุณภาพอากาศภายในอาคาร **ICT BRB (Indoor Air Quality - IAQ)** แบบ Real-time พัฒนาขึ้นเพื่อเชื่อมต่อกับระบบ **Emtrontech AIIR API** โดยแสดงผลข้อมูลเซ็นเซอร์ตรวจวัดคุณภาพอากาศเฉพาะห้อง **SITE 4 ICT 401** อย่างแม่นยำและรวดเร็ว โดยไม่มีการยิง API ดึงข้อมูลส่วนอื่นที่เกินจำเป็น
 
 ![AIIR Dashboard Preview](https://img.shields.php.net/badge/Status-Active-0D9488?style=for-the-badge) ![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-0284C7?style=for-the-badge&logo=php) ![License](https://img.shields.io/badge/License-MIT-C36D4B?style=for-the-badge)
 

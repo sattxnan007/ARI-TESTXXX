@@ -70,59 +70,43 @@ c:\Users\tn_setthanan\Desktop\Copy\
 3. **`<main class="main-content" id="mainContent">` (บรรทัด 71–279)**:
    - **Topbar (`.topbar`)**: แถบด้านบนแบบตรึง มีปุ่มสลับการพับ/กาง Sidebar (`#sidebarToggleBtn`) และปุ่มสลับธีม สว่าง/มืด (`#themeToggleBtn`)
    - **Welcome Screen (`#welcomeScreen`)**: หน้าจอต้อนรับ แสดงเมื่อผู้ใช้ยังไม่ได้ Login
-   - **Dashboard Container (`#dashboard`)**: หน้าจอแสดงผลหลัก (จะถูกเปิดใช้งานเมื่อ Login สำเร็จ):
-     - **Hero Header**: แสดงปุ่มกด Refresh ข้อมูลด้วยตัวเอง (`#manualRefreshBtn`)
-     - **Tab System**:
-       - **Tab 1: ภาพรวมทุกจุด (`#panel-overview`)**: แสดง Sites Cards Grid (`#sitesGrid`) และ Data Table (`#sitesTable`) พร้อมปุ่มดาวน์โหลด CSV
-       - **Tab 2: ห้อง ICT401 Site 4 (`#panel-site4`)**:
-         - **Metric Cards (7 ตัววัด)**: PM2.5, PM10, CO2, อุณหภูมิ, ความชื้น, EVOC (สารระเหยง่าย) และ RSSI (ความแรงสัญญาณ)
-         - **Gauge Charts**: Canvas 3 ตัวสำหรับเกจครึ่งวงกลม (PM2.5, CO2, Temperature)
-         - **Control Recommendations**: การ์ดแสดงคำแนะนำการทำงานอุปกรณ์อัตโนมัติ (Air Purifier, Ventilation, AC, Humidity Control)
-         - **Historical Trend Chart**: Canvas สำหรับกราฟเส้นแนวโน้ม 10 ครั้งล่าสุด (`#trendChart`)
+   - **Dashboard Container (`#dashboard`)**: หน้าจอแสดงผลหลัก (เปิดใช้งานเมื่อ Login สำเร็จ):
+      - **Room Panel: SITE 4 ICT 401 (`#panel-site4`)**:
+        - **Hero Gauge Cards (3 ตัววัดหลัก)**: รวมเกจครึ่งวงกลมและตัวเลขของ PM2.5, CO2, และ อุณหภูมิ ไว้ในการ์ดใบเดียวกันเพื่อความสมส่วน
+        - **Environmental Telemetry Grid (4 ตัววัดสภาพแวดล้อม)**: PM10, ความชื้น, EVOC และ RSSI Signal จัดวางใน 4 คอลัมน์กะทัดรัด
+        - **Control Recommendations**: การ์ดแสดงคำแนะนำการทำงานอุปกรณ์อัตโนมัติ (Air Purifier, Ventilation, AC, Humidity Control)
+        - **Historical Trend Chart**: Canvas สำหรับกราฟเส้นแนวโน้ม 10 ครั้งล่าสุด (`#trendChart`)
    - **Toast Notification (`#toast`)**: กรอบแจ้งเตือนข้อความสถานะมุมล่าง
 
 ---
 
 ### 3.2 `proxy.php` (ส่วน Backend API Proxy & Authentication)
 
-[proxy.php](file:///c:/Users/tn_setthanan/Desktop/Copy/proxy.php) ทำหน้าที่เป็นตัวกลาง (Middleware/Proxy) ระหว่างหน้าเว็บเบราว์เซอร์กับ **Emtrontech AIIR API Server** เพื่อแก้ปัญหา CORS และจัดการ Session Cookie Jar
+[proxy.php](file:///c:/Users/tn_setthanan/Desktop/Copy/proxy.php) ทำหน้าที่เป็นตัวกลาง (Middleware/Proxy) ระหว่างหน้าเว็บเบราว์เซอร์กับ **Emtrontech AIIR API Server** เพื่อแก้ปัญหา CORS, จัดการ Session Cookie Jar, รวมถึงระบบ **Server-Side Cache (5s TTL)** และ **Anti-DoS Rate Limiter** ป้องกันการยิงสแปม API
 
 #### โครงสร้างและการทำงานภายในไฟล์:
-1. **CORS & Headers (บรรทัด 10–19)**:
-   - กำหนด Header ให้ตอบกลับเป็น JSON (`Content-Type: application/json`)
-   - อนุญาต Access Control Origin (`*`) และจัดการ Pre-flight `OPTIONS` request
+1. **Anti-DoS Rate Limiter (`checkRateLimit()`)**:
+   - จำกัดจำนวนคำขอต่อ IP แอดเดรสสูงสุด **60 ครั้งต่อนาที** (`RATE_LIMIT_MAX = 60`)
+   - หากยิงคำขอถี่เกินเกณฑ์ ระบบจะตอบกลับด้วย **HTTP Status 429 Too Many Requests** ป้องกันการโจมตีเว็บ (Denial of Service)
 
-2. **Session Cookie Jar Setup (บรรทัด 21–25)**:
+2. **Server-Side Cache System (`getFromCache()`, `saveToCache()`)**:
+   - บันทึกผลลัพธ์ข้อมูลจาก API ลงไฟล์แคชชั่วคราว มีอายุ **5 วินาที** (`CACHE_TTL = 5`)
+   - **ข้อดี**: แม้มีผู้ใช้รีเฟรชหน้าจอ 100 ครั้งภายใน 5 วินาที ระบบจะยิง cURL ออกไปหาเซิร์ฟเวอร์หลักเพียง **1 ครั้งเท่านั้น** ส่วนที่เหลือจะตอบกลับจากแคชทันที (ความเร็วตอบกลับ ~1ms) ป้องกันการโดนแบน IP จากเซิร์ฟเวอร์หลัก
+
+3. **Session Cookie Jar Setup**:
    - เรียก `session_start()` และกำหนดพาธเก็บไฟล์ Cookie Jar ที่ `/tmp/aiir_cookie_[session_id].txt` เพื่อใช้แชร์ Cookie ของเซสชัน cURL
 
-3. **Action Router (บรรทัด 30–41)**:
-   - ตรวจสอบพารามิเตอร์ `action` จาก `GET` หรือ `POST` แล้วสวิตช์ฟังก์ชัน:
-     - `login` ➔ เรียกฟังก์ชัน `doLogin()`
-     - `getSiteData` ➔ เรียกฟังก์ชัน `getSiteData()`
-     - `getSpecData` ➔ เรียกฟังก์ชัน `getSpecData()`
-     - `logout` ➔ เรียกฟังก์ชัน `doLogout()`
+4. **Action Router & Helper Functions (`makeCurl()`, `doLogin()`, `getSpecData()`, `doLogout()`)**:
+   - `getSpecData()`: ดึงข้อมูลเฉพาะห้อง SITE 4 ICT 401 โดยตรวจสอบแคช `getSpecData_4_4` ก่อนยิง cURL
+   - `clearAllCache()`: ล้างแคชทั้งหมดทันทีที่มีการ Login ใหม่ หรือ Logout ออกจากระบบ
 
-4. **`makeCurl()` Helper Function (บรรทัด 43–91)**:
-   - ฟังก์ชันหลักในการยิง HTTP Request ผ่าน cURL
-   - รองรับการบันทึกและส่ง Cookie ผ่าน `CURLOPT_COOKIEJAR` และ `CURLOPT_COOKIEFILE`
-   - จัดการ User-Agent, Referer, Bypass SSL Verification (`CURLOPT_SSL_VERIFYPEER => false`)
-
-5. **`doLogin()` (บรรทัด 93–128)**:
-   - รับค่า `user` และ `pass` แปลงเป็น **SHA256 Hash** (`hash('sha256', ...)`)
-   - ส่ง POST ไปยัง `https://emtrontech.com/AIIR/userAuthen.php` ด้วย payload `u={userHash}&p={passHash}&d=0`
-   - ทำการยิง GET ตรวจสอบหน้า `index.php` หากไม่โดน Redirect กลับไป `login.php` ถือว่า Login สำเร็จ
-
-6. **`getSiteData()` (บรรทัด 130–173)**:
-   - ยิง POST ไปยัง `getSiteData.php` เพื่อดึงตารางสรุปเซ็นเซอร์ทุกจุด (All Sites)
-   - แปลงข้อมูล JSON จาก API ให้อยู่ในโครงสร้างมาตรฐาน (`Site`, `Status`, `RSSI`, `PM2.5`, `PM10`, `CO2`, `Update`) ส่งกลับไปยัง JavaScript
-
-7. **`getSpecData()` (บรรทัด 175–297)**:
-   - ดึงข้อมูลระดับลึกของ Site 4 (ห้อง ICT401)
+6. **`getSpecData()` (บรรทัด 175–297)**:
+   - ดึงข้อมูลระดับลึกเฉพาะ Site 4 (ห้อง ICT401)
    - **ขั้นตอนที่ 1**: ยิง GET หน้า `siteData.php?id=4&type=4&sName=ICT401` เสมือนเบราว์เซอร์เปิดหน้าเว็บ
    - **ขั้นตอนที่ 2**: ยิง POST ไปยัง `getSpecSiteData.php` พร้อม Form Data Payload `site=4&siteType=4`
    - สกัดค่า `temp`, `humid`, `evoc`, `pm25`, `pm10`, `co2`, `rssi`, `lastUpdate` ส่งกลับแบบ JSON
 
-8. **`doLogout()` (บรรทัด 299–306)**:
+7. **`doLogout()` (บรรทัด 299–306)**:
    - ลบไฟล์ Cookie Jar ชั่วคราว และทำลาย Session ใน PHP
 
 ---
@@ -133,34 +117,37 @@ c:\Users\tn_setthanan\Desktop\Copy\
 
 #### โครงสร้างและการทำงานภายในไฟล์:
 1. **Config & State Objects (บรรทัด 9–31)**:
-   - `CONFIG`: กำหนด URL ปลายทางของ `proxy.php`, รอบ Auto-Refresh (30,000 ms), จำนวนจุดย้อนหลังบนกราฟแนวโน้ม (10 จุด)
-   - `STATE`: เก็บสถานะแอปพลิเคชัน เช่น `isLoggedIn`, `allSitesData`, `site4Data`, อาร์เรย์เก็บประวัติสำหรับกราฟเส้น, ตัวแปรเก็บ Chart Instance
+   - `CONFIG`: กำหนด URL ปลายทาง `proxy.php?action=getSpecData&site=4&siteType=4` สำหรับดึงข้อมูลห้อง ICT401 โดยเฉพาะ, รอบ Auto-Refresh (30,000 ms), จำนวนจุดย้อนหลังบนกราฟแนวโน้ม (10 จุด)
+   - `STATE`: เก็บสถานะแอปพลิเคชัน เช่น `isLoggedIn`, `site4Data`, `historyLogs`, อาร์เรย์เก็บประวัติสำหรับกราฟเส้น, ตัวแปรเก็บ Chart Instance
 
 2. **UI Controls & Theme (บรรทัด 52–112)**:
    - `toggleSidebar()`, `toggleSidebarCollapse()`: เปิด/ปิด หรือซ่อนแถบ Sidebar (รวมถึงปรับขนาด Canvas เกจหลังจากพับเมนู)
    - `toggleTheme()`, `applyTheme()`, `initTheme()`: สลับและบันทึกธีม Light/Dark Mode ลงใน `localStorage`
-   - `switchTab()`: สลับหน้าต่างระหว่าง "ภาพรวมทุกจุด" และ "ห้อง ICT401 (Site 4)"
 
 3. **Authentication Handlers (บรรทัด 166–240)**:
    - `handleLogin(e)`: รับการ Submit ฟอร์ม Login แสดง Spinner โหลด ยิง API ไปยัง `proxy.php?action=login`
    - `setConnected(on)`: ปรับ UI สถานะ Badge ด้านซ้าย (Online/Offline) และเปิด/ซ่อนหน้า Dashboard
 
 4. **Data Fetching Engine (บรรทัด 242–335)**:
-   - `fetchData()`: ฟังก์ชันดึงข้อมูล ดึงแบบขนานด้วย `Promise.all` ยิงไปยัง `getSiteData` และ `getSpecData`
-   - `realFetchAll()`: รับ JSON จาก `proxy.php` ตรวจสอบ Session Expired (ถ้า Session หมดอายุจะแจ้งเตือนและปรับสถานะเป็น Disconnected)
+   - `fetchData()`: ดึงข้อมูลเฉพาะ **ห้อง SITE 4 ICT 401** จาก `CONFIG.specDataUrl`
+   - `realFetchSite4()`: รับ JSON จาก `proxy.php` ตรวจสอบ Session Expired (ถ้า Session หมดอายุจะแจ้งเตือนและปรับสถานะเป็น Disconnected)
    - `startAutoRefresh()` / `stopAutoRefresh()`: จัดการ `setInterval` ตามสวิตช์ Auto-Refresh
 
-5. **Data Rendering (บรรทัด 385–525)**:
-   - `appendHistory(data)`: เพิ่มข้อมูลล่าสุดเข้าอาร์เรย์ประวัติ (จำกัดไว้ไม่เกิน 10 จุดล่าสุด)
-   - `renderOverview(sites)`: วาดการ์ดสรุปสำหรับแต่ละ Site บน Grid และสร้างตารางข้อมูลทุกจุด
+5. **Data Rendering**:
+   - `appendHistory(data)`: เพิ่มข้อมูลล่าสุดเข้าอาร์เรย์ประวัติ (จำกัดไว้ไม่เกิน 10 จุดล่าสุด) และบันทึกประวัติลงใน `historyLogs`
    - `renderSiteDetail(data)`: อัปเดตการ์ดตัววัดทั้ง 7 ตัวของ Site 4 (คำนวณเปอร์เซ็นต์หลอด Progress Bar และเปลี่ยนสีตามระดับความอันตราย)
+   - `downloadCSV()`: ส่งออกไฟล์ CSV ประวัติข้อมูลย้อนหลังของห้อง ICT401
 
 6. **Control Recommendations Logic (บรรทัด 560–586)**:
-   - `renderControlCards(pm25, co2, temp, humid)`: ประเมินเกณฑ์เพื่อแนะนำการเปิด/ปิด อุปกรณ์อัตโนมัติ:
-     - **Air Purifier**: PM2.5 > 35 🔴 เปิด High / > 12 🟡 เปิด Low / ≤ 12 🟢 ปิด
-     - **Ventilation**: CO2 > 1000 🔴 เปิด Max / > 800 🟡 เปิด / ≤ 800 🟢 ปิด
-     - **Air Conditioner**: อุณหภูมิ > 30°C 🔴 Cool 22°C / > 26°C 🟡 Cool 25°C / ≤ 26°C 🟢 Eco/ปิด
-     - **Humidity Control**: ความชื้น < 40% 🟡 Humidifier ON / > 60% 🟡 Dehumidifier ON / 40-60% 🟢 ปิด
+6. **AI Smart HVAC Automation Engine (บรรทัด 520–635)**:
+   - `runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc)`: ประมวลผลด้วย AI Inference Model จำลองแบบ Multi-Variable Joint Decision Matrix:
+     - **AI IAQ Score (0-100%)**: คำนวณคะแนนดัชนีสุขภาพอากาศรวมจาก PM2.5, PM10, CO2, EVOC, อุณหภูมิและความชื้น
+     - **Steadman Heat Index Model**: คำนวณอุณหภูมิที่รู้สึกจริง (Perceived Temperature) ตามความชื้นสัมพัทธ์
+     - **Air Purifier AI**: ประเมิน HEPA + Carbon Filter Boost (High 85-100% / Eco Auto 45% / Standby 15%)
+     - **Ventilation AI**: คำนวณอัตราแลกเปลี่ยนอากาศ (Air Exchange Rate 3.8 ACH / Fresh Air Valve %)
+     - **Air Conditioner AI**: ประเมินสภาวะสบายทางความร้อน (PMV Index) ปรับ Cool High / Cool Auto / Eco Saving
+     - **Humidity Control AI**: คำนวณโหมดดึงความชื้น (Dehumidifier High/Low) ป้องกันไวรัสและเชื้อรา หรือเติมความชื้น (Humidifier)
+     - **AI Reasoning Banner**: สร้างคำอธิบายแผนการทำงานของ AI ในภาษาธรรมชาติ (Natural Language AI Insight)
 
 7. **Semi-Circle Gauges Rendering (บรรทัด 588–693)**:
    - `drawGauge(canvasId, value, max, ranges, label, unit)`: ใช้อัลกอริทึม HTML5 Canvas 2D Context วาดเกจทรงโค้งครึ่งวงกลม
