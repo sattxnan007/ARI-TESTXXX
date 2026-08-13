@@ -339,7 +339,13 @@ async function fetchData() {
         lastUpdate: specUpd,
       };
 
-      appendHistory(STATE.site4Data);
+      if (Array.isArray(spec.history) && spec.history.length > 0) {
+        STATE.historyLogs = spec.history;
+        updateTrendChart();
+      } else {
+        appendHistory(STATE.site4Data);
+      }
+
       renderSiteDetail(STATE.site4Data);
       updateLastUpdate(specUpd);
     } else {

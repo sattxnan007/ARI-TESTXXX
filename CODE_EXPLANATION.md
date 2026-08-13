@@ -94,13 +94,15 @@ c:\Users\tn_setthanan\Desktop\Copy\
    - บันทึกผลลัพธ์ข้อมูลจาก API ลงไฟล์แคชชั่วคราว มีอายุ **5 วินาที** (`CACHE_TTL = 5`)
    - **ข้อดี**: แม้มีผู้ใช้รีเฟรชหน้าจอ 100 ครั้งภายใน 5 วินาที ระบบจะยิง cURL ออกไปหาเซิร์ฟเวอร์หลักเพียง **1 ครั้งเท่านั้น** ส่วนที่เหลือจะตอบกลับจากแคชทันที (ความเร็วตอบกลับ ~1ms) ป้องกันการโดนแบน IP จากเซิร์ฟเวอร์หลัก
 
-3. **Session Cookie Jar Setup**:
-   - เรียก `session_start()` และกำหนดพาธเก็บไฟล์ Cookie Jar ที่ `/tmp/aiir_cookie_[session_id].txt` เพื่อใช้แชร์ Cookie ของเซสชัน cURL
+3. **Server-Side File History Store (`saveHistoryRecord()`, `getHistoryRecords()`)**:
+   - บันทึกประวัติข้อมูลเซ็นเซอร์ย้อนหลังลงในไฟล์ JSON ชั่วคราวบนเซิร์ฟเวอร์ (`/tmp/aiir_history_ict401.json`)
+   - **ข้อดี**: ไม่ต้องพึ่งพาฐานข้อมูลหนัก (เช่น MySQL/MongoDB) แต่คงเก็บข้อมูลย้อนหลังได้สูงสุด **2,000 จุด (~16 ชั่วโมง)** โดยใช้ระบบ Sliding Window ป้องกันไม่ให้ไฟล์มีขนาดใหญ่เกินไป
+   - เมื่อกด F5 หรือเปิดหน้าเว็บจากอุปกรณ์อื่น กราฟเส้นแนวโน้มย้อนหลังจะโหลดข้อมูลที่เซิร์ฟเวอร์สะสมไว้ออกมาแสดงผลได้ทันที
 
-4. **Action Router & Helper Functions (`makeCurl()`, `doLogin()`, `checkSession()`, `getSpecData()`, `doLogout()`)**:
+4. **Action Router & Helper Functions (`makeCurl()`, `doLogin()`, `checkSession()`, `getSpecData()`, `getHistory()`, `doLogout()`)**:
    - `checkSession()`: ตรวจสอบสถานะการเข้าสู่ระบบในเซสชัน PHP และส่งกลับสถานะ `loggedIn` พร้อมชื่อบัญชีผู้ใช้เมื่อมีการรีเฟรชหน้าจอ (F5)
-   - `getSpecData()`: ดึงข้อมูลเฉพาะห้อง SITE 4 ICT 401 โดยตรวจสอบแคช `getSpecData_4_4` ก่อนยิง cURL
-   - `clearAllCache()`: ล้างแคชทั้งหมดทันทีที่มีการ Login ใหม่ หรือ Logout ออกจากระบบ
+   - `getSpecData()`: ดึงข้อมูลเฉพาะห้อง SITE 4 ICT 401 แนบอาร์เรย์ประวัติ `history` จากไฟล์แคชเซิร์ฟเวอร์ส่งกลับไปยังเบราว์เซอร์
+   - `clearAllCache()`: ล้างแคชคำตอบทั้งหมดทันทีที่มีการ Login ใหม่ หรือ Logout ออกจากระบบ
 
 ---
 

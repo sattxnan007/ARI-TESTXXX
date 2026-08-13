@@ -103,6 +103,64 @@ function clearAllCache(): void {
     }
 }
 
+// ---- Server-Side File History Store (Lightweight JSON Log) ----
+function getHistoryFile(): string {
+    return sys_get_temp_dir() . '/aiir_history_ict401.json';
+}
+
+function saveHistoryRecord(array $data): void {
+    if (empty($data['ok'])) return;
+    $file = getHistoryFile();
+    $maxRecords = 2000; // Store up to 2,000 data points (~16 hours at 30s interval)
+
+    $history = [];
+    if (file_exists($file)) {
+        $content = @file_get_contents($file);
+        if ($content) {
+            $history = json_decode($content, true) ?: [];
+        }
+    }
+
+    $timeStr = !empty($data['lastUpdate']) ? (string)$data['lastUpdate'] : date('d/m/Y H:i:s');
+    $ts = time() * 1000;
+
+    if (!empty($history)) {
+        $last = end($history);
+        if (isset($last['time']) && $last['time'] === $timeStr) {
+            return; // Skip duplicate snapshot
+        }
+    }
+
+    $entry = [
+        'timestamp' => $ts,
+        'label'     => date('H:i:s'),
+        'time'      => $timeStr,
+        'site'      => 'Site 4 - ICT401',
+        'pm25'      => (float)($data['pm25'] ?? $data['PM2.5'] ?? 0),
+        'pm10'      => (float)($data['pm10'] ?? $data['PM10'] ?? 0),
+        'co2'       => (float)($data['co2']  ?? $data['CO2']  ?? 0),
+        'temp'      => (float)($data['temp'] ?? 0),
+        'humid'     => (float)($data['humid'] ?? 0),
+        'evoc'      => (float)($data['evoc'] ?? 0),
+        'rssi'      => (string)($data['rssi'] ?? $data['RSSI'] ?? '0'),
+    ];
+
+    $history[] = $entry;
+
+    if (count($history) > $maxRecords) {
+        $history = array_slice($history, -$maxRecords);
+    }
+
+    @file_put_contents($file, json_encode($history), LOCK_EX);
+}
+
+function getHistoryRecords(): array {
+    $file = getHistoryFile();
+    if (!file_exists($file)) return [];
+    $content = @file_get_contents($file);
+    return $content ? (json_decode($content, true) ?: []) : [];
+}
+
 // ---- cURL Helper Function ----
 function makeCurl(string $url, array $postData = [], array $extraHeaders = [], bool $followRedirect = true): array {
     global $cookieFile;
@@ -253,6 +311,7 @@ function getSpecData(): void {
     $cached = getFromCache($cacheKey);
     if ($cached !== null) {
         header('X-Cache: HIT');
+        $cached['history'] = getHistoryRecords();
         echo json_encode($cached);
         return;
     }
@@ -375,6 +434,8 @@ function getSpecData(): void {
         'raw'        => $d,
     ];
 
+    saveHistoryRecord($response);
+    $response['history'] = getHistoryRecords();
     saveToCache($cacheKey, $response);
     echo json_encode($response);
 }
@@ -409,6 +470,7 @@ switch ($action) {
     case 'checkSession': checkSession();   break;
     case 'getSiteData':  getSiteData();    break;
     case 'getSpecData':  getSpecData();    break;
+    case 'getHistory':   echo json_encode(['ok' => true, 'history' => getHistoryRecords()]); break;
     case 'logout':       doLogout();       break;
     default:
         echo json_encode(['ok' => false, 'error' => 'Unknown action: ' . htmlspecialchars($action)]);
