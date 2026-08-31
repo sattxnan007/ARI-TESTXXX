@@ -161,6 +161,83 @@ function getHistoryRecords(): array {
     return $content ? (json_decode($content, true) ?: []) : [];
 }
 
+// ---- Server-Side 45-Minute File Cache Logger ----
+function get45MinCacheFile(): string {
+    return __DIR__ . '/cache_45m_ict401.json';
+}
+
+function save45MinCacheRecord(array $data): void {
+    if (empty($data['ok'])) return;
+    $file = get45MinCacheFile();
+    $intervalSec = 45 * 60; // 45 minutes = 2,700 seconds
+    $maxRecords = 1000;      // Stores up to ~1,000 snapshots (over 1 month of logs)
+
+    $history = [];
+    if (file_exists($file)) {
+        $content = @file_get_contents($file);
+        if ($content) {
+            $history = json_decode($content, true) ?: [];
+        }
+    }
+
+    $nowTs = time();
+
+    if (!empty($history)) {
+        $lastEntry = end($history);
+        $lastTs = isset($lastEntry['timestamp_sec']) ? (int)$lastEntry['timestamp_sec'] : 0;
+        if (($nowTs - $lastTs) < $intervalSec) {
+            return; // Skip if less than 45 minutes elapsed since last 45m entry
+        }
+    }
+
+    $pm25  = (float)($data['pm25'] ?? $data['PM2.5'] ?? 0);
+    $pm10  = (float)($data['pm10'] ?? $data['PM10'] ?? 0);
+    $co2   = (float)($data['co2']  ?? $data['CO2']  ?? 0);
+    $temp  = (float)($data['temp'] ?? 0);
+    $humid = (float)($data['humid'] ?? 0);
+    $evoc  = (float)($data['evoc'] ?? 0);
+    $rssi  = (string)($data['rssi'] ?? $data['RSSI'] ?? '0');
+
+    // Calculate AI IAQ Score (0-100%)
+    $pm25Pen = min(35, max(0, ($pm25 / 50) * 35));
+    $co2Pen  = min(35, max(0, (($co2 - 400) / 1200) * 35));
+    $evocPen = min(15, max(0, ($evoc / 50) * 15));
+    $tempPen = ($temp < 20 || $temp > 28) ? min(10, max(0, abs($temp - 24) * 2)) : 0;
+    $humPen  = ($humid < 40 || $humid > 65) ? min(15, max(0, abs($humid - 50) * 0.3)) : 0;
+    $iaqScore = (int)max(10, round(100 - ($pm25Pen + $co2Pen + $evocPen + $tempPen + $humPen)));
+
+    $entry = [
+        'timestamp_sec' => $nowTs,
+        'timestamp'     => $nowTs * 1000,
+        'label'         => date('d/m H:i'),
+        'time'          => !empty($data['lastUpdate']) ? (string)$data['lastUpdate'] : date('d/m/Y H:i:s'),
+        'site'          => 'Site 4 - ICT401',
+        'pm25'          => $pm25,
+        'pm10'          => $pm10,
+        'co2'           => $co2,
+        'temp'          => $temp,
+        'humid'         => $humid,
+        'evoc'          => $evoc,
+        'rssi'          => $rssi,
+        'iaqScore'      => $iaqScore,
+    ];
+
+    $history[] = $entry;
+
+    if (count($history) > $maxRecords) {
+        $history = array_slice($history, -$maxRecords);
+    }
+
+    @file_put_contents($file, json_encode($history, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
+}
+
+function get45MinCacheRecords(): array {
+    $file = get45MinCacheFile();
+    if (!file_exists($file)) return [];
+    $content = @file_get_contents($file);
+    return $content ? (json_decode($content, true) ?: []) : [];
+}
+
 // ---- cURL Helper Function ----
 function makeCurl(string $url, array $postData = [], array $extraHeaders = [], bool $followRedirect = true): array {
     global $cookieFile;
@@ -312,6 +389,7 @@ function getSpecData(): void {
     if ($cached !== null) {
         header('X-Cache: HIT');
         $cached['history'] = getHistoryRecords();
+        $cached['history45m'] = get45MinCacheRecords();
         echo json_encode($cached);
         return;
     }
@@ -435,7 +513,9 @@ function getSpecData(): void {
     ];
 
     saveHistoryRecord($response);
+    save45MinCacheRecord($response);
     $response['history'] = getHistoryRecords();
+    $response['history45m'] = get45MinCacheRecords();
     saveToCache($cacheKey, $response);
     echo json_encode($response);
 }
@@ -466,12 +546,13 @@ checkRateLimit();
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 switch ($action) {
-    case 'login':        doLogin();        break;
-    case 'checkSession': checkSession();   break;
-    case 'getSiteData':  getSiteData();    break;
-    case 'getSpecData':  getSpecData();    break;
-    case 'getHistory':   echo json_encode(['ok' => true, 'history' => getHistoryRecords()]); break;
-    case 'logout':       doLogout();       break;
+    case 'login':           doLogin();        break;
+    case 'checkSession':    checkSession();   break;
+    case 'getSiteData':     getSiteData();    break;
+    case 'getSpecData':     getSpecData();    break;
+    case 'getHistory':      echo json_encode(['ok' => true, 'history' => getHistoryRecords()]); break;
+    case 'get45MinHistory': echo json_encode(['ok' => true, 'history45m' => get45MinCacheRecords()]); break;
+    case 'logout':          doLogout();       break;
     default:
         echo json_encode(['ok' => false, 'error' => 'Unknown action: ' . htmlspecialchars($action)]);
         break;

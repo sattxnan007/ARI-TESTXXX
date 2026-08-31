@@ -1,333 +1,299 @@
 <!DOCTYPE html>
 <html lang="th">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AIIR IAQ Smart Dashboard</title>
-  <meta name="description" content="ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB แบบ Real-time พร้อม PM2.5, PM10, CO2, อุณหภูมิ และความชื้น" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>" />
+  <title>AIR IAQ Smart Dashboard</title>
+  <meta name="description"
+    content="ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB แบบ Real-time พร้อม PM2.5, PM10, CO2, อุณหภูมิ และความชื้น" />
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/style.css?v=2.6" />
 </head>
+
 <body>
 
-<!-- Sidebar -->
-<aside class="sidebar" id="sidebar">
-  <div class="sidebar-header">
-    <div class="sidebar-logo">🌿</div>
-    <div class="sidebar-brand">AIIR Dashboard</div>
-    <div class="sidebar-sub">ICT BRB Air Quality Monitor</div>
-  </div>
-  <hr class="divider" />
-
-  <!-- Status Badge -->
-  <div class="status-badge badge-offline" id="statusBadge">
-    <span class="dot dot-red" id="statusDot"></span>
-    <span id="statusText">Disconnected</span>
-  </div>
-
-  <!-- Login Form -->
-  <form class="login-form" id="loginForm" onsubmit="handleLogin(event)">
-    <div class="form-label">Credentials</div>
-    <input type="text" id="inputUser" class="form-input" placeholder="Username" value="admin" autocomplete="username" />
-    <div class="pw-wrap">
-      <input type="password" id="inputPass" class="form-input" placeholder="Password" autocomplete="current-password" />
-      <button type="button" class="pw-toggle" id="pwToggle" onclick="togglePw()" title="แสดง/ซ่อน Password">&#128065;</button>
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">🌿</div>
+      <div class="sidebar-brand">AIR Dashboard</div>
+      <div class="sidebar-sub">ICT BRB Air Quality Monitor</div>
     </div>
-    <button type="submit" class="btn-login" id="loginBtn">
-      <span id="loginBtnText">&#128273; Login &amp; Connect</span>
-      <span class="spinner" id="loginSpinner" hidden></span>
-    </button>
-  </form>
+    <hr class="divider" />
 
-  <!-- User Session Card (shown after login) -->
-  <div class="user-session-card" id="userSessionCard" hidden>
-    <div class="session-user-info">
-      <div class="session-avatar">👤</div>
-      <div class="session-user-details">
-        <div class="session-user-name" id="sidebarUserDisplay">User</div>
-        <div class="session-user-role">Connected Account</div>
+    <!-- Status Badge -->
+    <div class="status-badge badge-offline" id="statusBadge">
+      <span class="dot dot-red" id="statusDot"></span>
+      <span id="statusText">Disconnected</span>
+    </div>
+
+    <!-- Login Form -->
+    <form class="login-form" id="loginForm" onsubmit="handleLogin(event)">
+      <div class="form-label">Credentials</div>
+      <input type="text" id="inputUser" class="form-input" placeholder="Username" value="admin"
+        autocomplete="username" />
+      <div class="pw-wrap">
+        <input type="password" id="inputPass" class="form-input" placeholder="Password"
+          autocomplete="current-password" />
+        <button type="button" class="pw-toggle" id="pwToggle" onclick="togglePw()"
+          title="แสดง/ซ่อน Password">&#128065;</button>
       </div>
-    </div>
-    <button class="btn-logout" id="sidebarLogoutBtn" onclick="handleLogout()" title="ออกจากระบบ">
-      🚪 ออกจากระบบ (Logout)
-    </button>
-  </div>
+      <button type="submit" class="btn-login" id="loginBtn">
+        <span id="loginBtnText">&#128273; Login &amp; Connect</span>
+        <span class="spinner" id="loginSpinner" hidden></span>
+      </button>
+    </form>
 
-  <hr class="divider" />
-
-  <!-- Auto Refresh Toggle -->
-  <label class="toggle-wrap">
-    <span class="toggle-label">&#128260; Auto-Refresh (30 วินาที)</span>
-    <div class="toggle-switch">
-      <input type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh()" />
-      <span class="slider"></span>
-    </div>
-  </label>
-
-  <!-- Last Update -->
-  <div class="last-update" id="lastUpdateWrap" hidden>
-    <div class="last-update-label">อัปเดตล่าสุด</div>
-    <div class="last-update-time" id="lastUpdateTime">—</div>
-  </div>
-
-  <!-- Sidebar collapse button (mobile) -->
-  <button class="sidebar-close" id="sidebarClose" onclick="toggleSidebar()">&#x2715;</button>
-</aside>
-
-<!-- Overlay for mobile -->
-<div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
-
-<!-- Main content -->
-<main class="main-content" id="mainContent">
-
-  <!-- Always-Visible Top Bar -->
-  <div class="topbar">
-    <div class="topbar-left">
-      <button class="topbar-btn" id="sidebarToggleBtn" onclick="toggleSidebarCollapse()" title="ซ่อน/แสดง แถบข้าง">&#9776;</button>
-      <span class="topbar-brand">🌿 AIIR IAQ Smart Dashboard</span>
-    </div>
-    <div class="topbar-right">
-      <div class="topbar-user-area" id="topbarUserArea" hidden>
-        <div class="topbar-user-pill">
-          <span class="user-avatar-icon">👤</span>
-          <span class="user-display-name" id="topbarUserDisplay">User</span>
+    <!-- User Session Card (shown after login) -->
+    <div class="user-session-card" id="userSessionCard" hidden>
+      <div class="session-user-info">
+        <div class="session-avatar">👤</div>
+        <div class="session-user-details">
+          <div class="session-user-name" id="sidebarUserDisplay">User</div>
+          <div class="session-user-role">Connected Account</div>
         </div>
-        <button class="btn-topbar-logout" onclick="handleLogout()" title="ออกจากระบบ">
-          🚪 Logout
+      </div>
+      <button class="btn-logout" id="sidebarLogoutBtn" onclick="handleLogout()" title="ออกจากระบบ">
+        🚪 ออกจากระบบ (Logout)
+      </button>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Auto Refresh Toggle -->
+    <label class="toggle-wrap">
+      <span class="toggle-label">&#128260; Auto-Refresh (30 วินาที)</span>
+      <div class="toggle-switch">
+        <input type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh()" />
+        <span class="slider"></span>
+      </div>
+    </label>
+
+    <!-- Last Update -->
+    <div class="last-update" id="lastUpdateWrap" hidden>
+      <div class="last-update-label">อัปเดตล่าสุด</div>
+      <div class="last-update-time" id="lastUpdateTime">—</div>
+    </div>
+
+    <!-- Sidebar collapse button (mobile) -->
+    <button class="sidebar-close" id="sidebarClose" onclick="toggleSidebar()">&#x2715;</button>
+  </aside>
+
+  <!-- Overlay for mobile -->
+  <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+  <!-- Main content -->
+  <main class="main-content" id="mainContent">
+
+    <!-- Always-Visible Top Bar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="topbar-btn" id="sidebarToggleBtn" onclick="toggleSidebarCollapse()"
+          title="ซ่อน/แสดง แถบข้าง">&#9776;</button>
+        <span class="topbar-brand">🌿 AIR IAQ Smart Dashboard</span>
+      </div>
+      <div class="topbar-right">
+        <button class="sound-toggle-btn" id="soundAlertToggleBtn" onclick="toggleSoundAlert()"
+          title="เปิด/ปิด ระบบแจ้งเตือน Pop-Up และเสียง">
+          <span id="soundAlertIcon">🔔</span>
+          <span class="sound-toggle-text" id="soundAlertText">ระบบแจ้งเตือน: เปิด</span>
         </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ---- NOT LOGGED IN SCREEN ---- -->
-  <div class="welcome-screen" id="welcomeScreen">
-    <div class="welcome-icon">🌿</div>
-    <h1 class="welcome-title">AIIR IAQ Smart Dashboard</h1>
-    <p class="welcome-sub">ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB<br />กรุณาเข้าสู่ระบบที่แถบด้านซ้าย</p>
-    <div class="welcome-hint">&#128072; กรอก Username &amp; Password แล้วกด Login</div>
-  </div>
-
-  <!-- ---- DASHBOARD (after login) ---- -->
-  <div class="dashboard" id="dashboard" hidden>
-
-    <!-- Hero Header -->
-    <div class="hero-header">
-      <div class="hero-icon">🌿</div>
-      <div class="hero-text">
-        <div class="hero-title">AIIR IAQ Smart Dashboard</div>
-        <div class="hero-subtitle">ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB &middot; 🎯 ห้อง SITE 4 ICT 401</div>
-      </div>
-      <div class="hero-right">
-        <button class="btn-download" onclick="downloadCSV()" title="ดาวน์โหลดประวัติข้อมูล CSV">&#11015; ดาวน์โหลด CSV</button>
-        <button class="btn-refresh" id="manualRefreshBtn" onclick="fetchData()">
-          <span id="refreshIcon">&#8635;</span> Refresh
+        <button class="btn-test-alert" onclick="testAlertModal()" title="ทดสอบแสดงผล Pop-Up แจ้งเตือนฉุกเฉิน">
+          🧪 ทดสอบ Pop-Up
         </button>
+        <div class="topbar-user-area" id="topbarUserArea" hidden>
+          <div class="topbar-user-pill">
+            <span class="user-avatar-icon">👤</span>
+            <span class="user-display-name" id="topbarUserDisplay">User</span>
+          </div>
+          <button class="btn-topbar-logout" onclick="handleLogout()" title="ออกจากระบบ">
+            🚪 Logout
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Main Panel: SITE 4 ICT 401 -->
-    <div class="room-panel active" id="panel-site4">
-      
-      <!-- Section 1: Hero Gauge Cards (PM2.5, CO2, Temperature) -->
-      <div class="metrics-section-title">🌟 ตัววัดระดับคุณภาพอากาศหลัก (Hero IAQ Indicators)</div>
-      <div class="hero-gauges-grid">
-        
-        <!-- Hero Card 1: PM2.5 -->
-        <div class="glass-panel hero-gauge-card" id="mc-pm25">
-          <div class="hero-card-header">
-            <div class="hero-card-title-wrap">
-              <div class="metric-icon-box icon-teal">🌫️</div>
-              <div>
-                <div class="hero-card-title">PM2.5 Level</div>
-                <div class="hero-card-sub">ฝุ่นละอองขนาดเล็ก (µg/m³)</div>
-              </div>
-            </div>
-            <div class="metric-status" id="status-pm25">—</div>
-          </div>
-          <div class="canvas-wrap">
-            <canvas id="gauge-pm25"></canvas>
-          </div>
-          <div class="hidden-values" hidden>
-            <span id="val-pm25">—</span>
-          </div>
-          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-pm25"></div></div>
-        </div>
+    <!-- ---- NOT LOGGED IN SCREEN ---- -->
+    <div class="welcome-screen" id="welcomeScreen">
+      <div class="welcome-icon">🌿</div>
+      <h1 class="welcome-title">AIR IAQ Smart Dashboard</h1>
+      <p class="welcome-sub">ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB<br />กรุณาเข้าสู่ระบบที่แถบด้านซ้าย</p>
+      <div class="welcome-hint">&#128072; กรอก Username &amp; Password แล้วกด Login</div>
+    </div>
 
-        <!-- Hero Card 2: CO2 -->
-        <div class="glass-panel hero-gauge-card" id="mc-co2">
-          <div class="hero-card-header">
-            <div class="hero-card-title-wrap">
-              <div class="metric-icon-box icon-azure">☁️</div>
-              <div>
-                <div class="hero-card-title">CO2 Ventilation</div>
-                <div class="hero-card-sub">คาร์บอนไดออกไซด์ (ppm)</div>
-              </div>
-            </div>
-            <div class="metric-status" id="status-co2">—</div>
-          </div>
-          <div class="canvas-wrap">
-            <canvas id="gauge-co2"></canvas>
-          </div>
-          <div class="hidden-values" hidden>
-            <span id="val-co2">—</span>
-          </div>
-          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-co2"></div></div>
-        </div>
+    <!-- ---- DASHBOARD (after login) ---- -->
+    <div class="dashboard" id="dashboard" hidden>
 
-        <!-- Hero Card 3: Temperature -->
-        <div class="glass-panel hero-gauge-card" id="mc-temp">
-          <div class="hero-card-header">
-            <div class="hero-card-title-wrap">
-              <div class="metric-icon-box icon-amber">🌡️</div>
-              <div>
-                <div class="hero-card-title">Room Temperature</div>
-                <div class="hero-card-sub">อุณหภูมิห้อง (°C)</div>
-              </div>
-            </div>
-            <div class="metric-status" id="status-temp">—</div>
-          </div>
-          <div class="canvas-wrap">
-            <canvas id="gauge-temp"></canvas>
-          </div>
-          <div class="hidden-values" hidden>
-            <span id="val-temp">—</span>
-          </div>
-          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-temp" style="background: linear-gradient(90deg, #f97316, #ea580c)"></div></div>
+      <!-- Real-Time Air Quality Alert Banner (Hidden by default) -->
+      <div class="iaq-alert-banner" id="alertBannerWrap" hidden>
+        <div class="alert-banner-icon">⚠️</div>
+        <div class="alert-banner-content">
+          <div class="alert-banner-title">การแจ้งเตือนคุณภาพอากาศเกินเกณฑ์มาตรฐาน (Air Quality Alert)</div>
+          <div class="alert-banner-desc" id="alertBannerText">ตรวจพบค่าดัชนีคุณภาพอากาศผิดปกติ</div>
         </div>
-
+        <button class="alert-banner-dismiss" onclick="dismissAlertBanner()" title="ปิดการแจ้งเตือน">&#x2715;</button>
       </div>
 
-      <!-- Section 2: Secondary Telemetry Grid (PM10, Humidity, EVOC, RSSI) -->
-      <div class="metrics-section-title">📊 สภาพแวดล้อมและสถานะเซ็นเซอร์ (Environmental Telemetry)</div>
-      <div class="telemetry-grid">
-        
-        <div class="metric-card" id="mc-pm10">
-          <div class="metric-card-top">
-            <div class="metric-icon-box icon-cyan">💨</div>
-            <div class="metric-info">
-              <div class="metric-label">PM10 (ฝุ่นขนาดกลาง)</div>
-              <div class="metric-status" id="status-pm10">—</div>
-            </div>
+      <!-- Hero Header -->
+      <div class="hero-header">
+        <div class="hero-icon">🌿</div>
+        <div class="hero-text">
+          <div class="hero-title">AIR IAQ Smart Dashboard</div>
+          <div class="hero-subtitle">ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB &middot; 🎯 ห้อง SITE 1 ICT-SERVICEDESK
           </div>
-          <div class="metric-value"><span id="val-pm10">—</span><span class="metric-unit">µg/m³</span></div>
-          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-pm10"></div></div>
         </div>
-
-        <div class="metric-card" id="mc-humid">
-          <div class="metric-card-top">
-            <div class="metric-icon-box icon-blue">💧</div>
-            <div class="metric-info">
-              <div class="metric-label">ความชื้นสัมพัทธ์</div>
-              <div class="metric-status" id="status-humid">—</div>
-            </div>
-          </div>
-          <div class="metric-value"><span id="val-humid">—</span><span class="metric-unit">%RH</span></div>
-          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-humid" style="background: linear-gradient(90deg, #38bdf8, #0284c7)"></div></div>
+        <div class="hero-right">
+          <button class="btn-download" onclick="downloadCSV()" title="ดาวน์โหลดประวัติข้อมูล CSV">&#11015; ดาวน์โหลด
+            CSV</button>
+          <button class="btn-refresh" id="manualRefreshBtn" onclick="fetchData()">
+            <span id="refreshIcon">&#8635;</span> Refresh
+          </button>
         </div>
-
-        <div class="metric-card" id="mc-evoc">
-          <div class="metric-card-top">
-            <div class="metric-icon-box icon-emerald">🧪</div>
-            <div class="metric-info">
-              <div class="metric-label">สารระเหยง่าย (EVOC)</div>
-              <div class="metric-status" id="status-evoc">—</div>
-            </div>
-          </div>
-          <div class="metric-value"><span id="val-evoc">—</span><span class="metric-unit">ppb</span></div>
-          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-evoc" style="background: linear-gradient(90deg, #10b981, #059669)"></div></div>
-        </div>
-
-        <div class="metric-card" id="mc-rssi">
-          <div class="metric-card-top">
-            <div class="metric-icon-box icon-purple">📡</div>
-            <div class="metric-info">
-              <div class="metric-label">RSSI Signal</div>
-              <div class="metric-status" id="status-rssi">—</div>
-            </div>
-          </div>
-          <div class="metric-value"><span id="val-rssi">—</span><span class="metric-unit">dBm</span></div>
-          <div class="metric-bar-wrap"><div class="metric-bar" id="bar-rssi" style="background: linear-gradient(90deg, #a78bfa, #7c3aed)"></div></div>
-        </div>
-
       </div>
 
-        <!-- AI Smart HVAC & IAQ Automation Engine Panel -->
-        <div class="glass-panel ai-control-panel" id="controlPanel">
-          
-          <div class="ai-panel-header">
-            <div class="ai-header-left">
-              <div class="ai-brain-icon">🤖</div>
-              <div>
-                <div class="ai-panel-title">AI Smart HVAC &amp; IAQ Automation Engine</div>
-                <div class="ai-panel-sub">โมเดลประมวลผลอัจฉริยะแบบ Real-Time (Model: AIIR-IAQNet v2.4 &middot; Inference Confidence 98.6%)</div>
+      <!-- Main Panel: SITE 4 ICT 401 -->
+      <div class="room-panel active" id="panel-site4">
+
+        <!-- Section 1: Hero Gauge Cards (PM2.5, CO2, Temperature) -->
+        <div class="metrics-section-title">🌟 ตัววัดระดับคุณภาพอากาศหลัก (Hero IAQ Indicators)</div>
+        <div class="hero-gauges-grid">
+
+          <!-- Hero Card 1: PM2.5 -->
+          <div class="glass-panel hero-gauge-card" id="mc-pm25">
+            <div class="hero-card-header">
+              <div class="hero-card-title-wrap">
+                <div class="metric-icon-box icon-teal">🌫️</div>
+                <div>
+                  <div class="hero-card-title">PM2.5 Level</div>
+                  <div class="hero-card-sub">ฝุ่นละอองขนาดเล็ก (µg/m³)</div>
+                </div>
               </div>
+              <div class="metric-status" id="status-pm25">—</div>
             </div>
-            <div class="ai-score-badge" id="aiScoreBadge">
-              <span class="ai-score-label">AI IAQ Index</span>
-              <span class="ai-score-val" id="aiScoreVal">—</span>
+            <div class="canvas-wrap">
+              <canvas id="gauge-pm25"></canvas>
+            </div>
+            <div class="hidden-values" hidden>
+              <span id="val-pm25">—</span>
+            </div>
+            <div class="metric-bar-wrap">
+              <div class="metric-bar" id="bar-pm25"></div>
             </div>
           </div>
 
-          <!-- AI Action Grid (4 Advanced Automation Cards) -->
-          <div class="ai-cmd-grid">
-            
-            <div class="ai-cmd-card">
-              <div class="ai-cmd-card-top">
-                <div class="ai-cmd-title-wrap">
-                  <div class="ai-cmd-icon">🌀</div>
-                  <div class="ai-cmd-name">Air Purifier (เครื่องฟอกอากาศ)</div>
+          <!-- Hero Card 2: CO2 -->
+          <div class="glass-panel hero-gauge-card" id="mc-co2">
+            <div class="hero-card-header">
+              <div class="hero-card-title-wrap">
+                <div class="metric-icon-box icon-azure">☁️</div>
+                <div>
+                  <div class="hero-card-title">CO2 Ventilation</div>
+                  <div class="hero-card-sub">คาร์บอนไดออกไซด์ (ppm)</div>
                 </div>
-                <span class="ai-badge pill-ok" id="badge-purifier">Auto</span>
               </div>
-              <div class="ai-cmd-state" id="cmd-purifier">—</div>
-              <div class="ai-cmd-details" id="detail-purifier">—</div>
+              <div class="metric-status" id="status-co2">—</div>
             </div>
-
-            <div class="ai-cmd-card">
-              <div class="ai-cmd-card-top">
-                <div class="ai-cmd-title-wrap">
-                  <div class="ai-cmd-icon">🪟</div>
-                  <div class="ai-cmd-name">Ventilation (ระบบระบายอากาศ)</div>
-                </div>
-                <span class="ai-badge pill-warn" id="badge-ventilation">Exchange</span>
-              </div>
-              <div class="ai-cmd-state" id="cmd-ventilation">—</div>
-              <div class="ai-cmd-details" id="detail-ventilation">—</div>
+            <div class="canvas-wrap">
+              <canvas id="gauge-co2"></canvas>
             </div>
-
-            <div class="ai-cmd-card">
-              <div class="ai-cmd-card-top">
-                <div class="ai-cmd-title-wrap">
-                  <div class="ai-cmd-icon">❄️</div>
-                  <div class="ai-cmd-name">Air Conditioning (ระบบปรับอากาศ)</div>
-                </div>
-                <span class="ai-badge pill-ok" id="badge-ac">Eco</span>
-              </div>
-              <div class="ai-cmd-state" id="cmd-ac">—</div>
-              <div class="ai-cmd-details" id="detail-ac">—</div>
+            <div class="hidden-values" hidden>
+              <span id="val-co2">—</span>
             </div>
-
-            <div class="ai-cmd-card">
-              <div class="ai-cmd-card-top">
-                <div class="ai-cmd-title-wrap">
-                  <div class="ai-cmd-icon">💧</div>
-                  <div class="ai-cmd-name">Humidity Control (ควบคุมความชื้น)</div>
-                </div>
-                <span class="ai-badge pill-warn" id="badge-humidity">Dehumidify</span>
-              </div>
-              <div class="ai-cmd-state" id="cmd-humidity">—</div>
-              <div class="ai-cmd-details" id="detail-humidity">—</div>
+            <div class="metric-bar-wrap">
+              <div class="metric-bar" id="bar-co2"></div>
             </div>
-
           </div>
 
-          <!-- AI Natural Language Insight Box -->
-          <div class="ai-insight-box" id="aiInsightBox">
-            💡 <strong>AI Reasoning</strong>: กำลังประมวลผลโมเดลโครงข่ายประสาทเทียม...
+          <!-- Hero Card 3: Temperature -->
+          <div class="glass-panel hero-gauge-card" id="mc-temp">
+            <div class="hero-card-header">
+              <div class="hero-card-title-wrap">
+                <div class="metric-icon-box icon-amber">🌡️</div>
+                <div>
+                  <div class="hero-card-title">Room Temperature</div>
+                  <div class="hero-card-sub">อุณหภูมิห้อง (°C)</div>
+                </div>
+              </div>
+              <div class="metric-status" id="status-temp">—</div>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="gauge-temp"></canvas>
+            </div>
+            <div class="hidden-values" hidden>
+              <span id="val-temp">—</span>
+            </div>
+            <div class="metric-bar-wrap">
+              <div class="metric-bar" id="bar-temp" style="background: linear-gradient(90deg, #f97316, #ea580c)"></div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Section 2: Secondary Telemetry Grid (PM10, Humidity, EVOC, RSSI) -->
+        <div class="metrics-section-title">📊 สภาพแวดล้อมและสถานะเซ็นเซอร์ (Environmental Telemetry)</div>
+        <div class="telemetry-grid">
+
+          <div class="metric-card" id="mc-pm10">
+            <div class="metric-card-top">
+              <div class="metric-icon-box icon-cyan">💨</div>
+              <div class="metric-info">
+                <div class="metric-label">PM10 (ฝุ่นขนาดกลาง)</div>
+                <div class="metric-status" id="status-pm10">—</div>
+              </div>
+            </div>
+            <div class="metric-value"><span id="val-pm10">—</span><span class="metric-unit">µg/m³</span></div>
+            <div class="metric-bar-wrap">
+              <div class="metric-bar" id="bar-pm10"></div>
+            </div>
+          </div>
+
+          <div class="metric-card" id="mc-humid">
+            <div class="metric-card-top">
+              <div class="metric-icon-box icon-blue">💧</div>
+              <div class="metric-info">
+                <div class="metric-label">ความชื้นสัมพัทธ์</div>
+                <div class="metric-status" id="status-humid">—</div>
+              </div>
+            </div>
+            <div class="metric-value"><span id="val-humid">—</span><span class="metric-unit">%RH</span></div>
+            <div class="metric-bar-wrap">
+              <div class="metric-bar" id="bar-humid" style="background: linear-gradient(90deg, #38bdf8, #0284c7)"></div>
+            </div>
+          </div>
+
+          <div class="metric-card" id="mc-evoc">
+            <div class="metric-card-top">
+              <div class="metric-icon-box icon-emerald">🧪</div>
+              <div class="metric-info">
+                <div class="metric-label">สารระเหยง่าย (EVOC)</div>
+                <div class="metric-status" id="status-evoc">—</div>
+              </div>
+            </div>
+            <div class="metric-value"><span id="val-evoc">—</span><span class="metric-unit">ppb</span></div>
+            <div class="metric-bar-wrap">
+              <div class="metric-bar" id="bar-evoc" style="background: linear-gradient(90deg, #10b981, #059669)"></div>
+            </div>
+          </div>
+
+          <div class="metric-card" id="mc-rssi">
+            <div class="metric-card-top">
+              <div class="metric-icon-box icon-purple">📡</div>
+              <div class="metric-info">
+                <div class="metric-label">RSSI Signal</div>
+                <div class="metric-status" id="status-rssi">—</div>
+              </div>
+            </div>
+            <div class="metric-value"><span id="val-rssi">—</span><span class="metric-unit">dBm</span></div>
+            <div class="metric-bar-wrap">
+              <div class="metric-bar" id="bar-rssi" style="background: linear-gradient(90deg, #a78bfa, #7c3aed)"></div>
+            </div>
           </div>
 
         </div>
@@ -337,9 +303,10 @@
           <div class="chart-header-row">
             <div class="section-header-no-margin">📈 แนวโน้มคุณภาพอากาศย้อนหลัง (Historical Line Chart)</div>
             <div class="chart-time-filter" id="chartTimeFilter">
-              <button class="time-filter-btn active" id="tf-30m" onclick="setTimeFilter('30m')">⏱️ 30 นาที</button>
+              <button class="time-filter-btn active" id="tf-all" onclick="setTimeFilter('all')">📊 ทั้งหมดในรอบ Login</button>
+              <button class="time-filter-btn" id="tf-15m" onclick="setTimeFilter('15m')">⏱️ 15 นาที</button>
+              <button class="time-filter-btn" id="tf-30m" onclick="setTimeFilter('30m')">⏱️ 30 นาที</button>
               <button class="time-filter-btn" id="tf-1h" onclick="setTimeFilter('1h')">⏱️ 1 ชั่วโมง</button>
-              <button class="time-filter-btn" id="tf-all" onclick="setTimeFilter('all')">📊 ทั้งหมด (Realtime)</button>
             </div>
           </div>
           <div class="chart-wrap">
@@ -348,13 +315,141 @@
         </div>
       </div>
 
-  </div><!-- /dashboard -->
+    <!-- Draggable Floating AI Assistant Button -->
+    <div class="ai-floating-widget" id="aiFloatingBtn" title="ลากเพื่อย้ายตำแหน่ง / คลิกเพื่อเปิดดู AI Analysis">
+      <div class="ai-floating-drag-grip" title="ลากเพื่อย้ายตำแหน่ง">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="ai-floating-icon-wrap">
+        <span class="ai-floating-icon">🤖</span>
+        <span class="ai-floating-pulse"></span>
+      </div>
+      <div class="ai-floating-text-wrap">
+        <span class="ai-floating-label">AI Advisor</span>
+        <span class="ai-floating-score" id="aiFloatingScore">—</span>
+      </div>
+    </div>
 
-  <!-- Toast Notification -->
-  <div class="toast" id="toast"></div>
+    <!-- AI Smart HVAC & IAQ Automation Modal Overlay -->
+    <div class="ai-modal-backdrop" id="aiModalOverlay" onclick="handleAIModalBackdrop(event)">
+      <div class="glass-panel ai-modal-card" id="controlPanel" role="dialog" aria-modal="true" aria-labelledby="aiModalTitle">
+        
+        <div class="ai-panel-header">
+          <div class="ai-header-left">
+            <div class="ai-brain-icon">🤖</div>
+            <div>
+              <div class="ai-panel-title" id="aiModalTitle">AI Smart HVAC &amp; IAQ Automation Engine</div>
+              <div class="ai-panel-sub">โมเดลประมวลผลอัจฉริยะแบบ Real-Time (Model: AIR-IAQNet v2.4 &middot; Inference Confidence 98.6%)</div>
+            </div>
+          </div>
+          <div class="ai-header-right">
+            <div class="ai-score-badge" id="aiScoreBadge">
+              <span class="ai-score-label">AI IAQ Index</span>
+              <span class="ai-score-val" id="aiScoreVal">—</span>
+            </div>
+            <button class="ai-modal-close-btn" id="aiModalCloseBtn" onclick="closeAIModal()" title="ปิดหน้าต่าง">&#x2715;</button>
+          </div>
+        </div>
 
-</main>
+        <!-- AI Action Grid (4 Advanced Automation Cards) -->
+        <div class="ai-cmd-grid">
 
-<script src="js/app.js"></script>
+          <div class="ai-cmd-card">
+            <div class="ai-cmd-card-top">
+              <div class="ai-cmd-title-wrap">
+                <div class="ai-cmd-icon">🌀</div>
+                <div class="ai-cmd-name">Air Purifier (เครื่องฟอกอากาศ)</div>
+              </div>
+              <span class="ai-badge pill-ok" id="badge-purifier">Auto</span>
+            </div>
+            <div class="ai-cmd-state" id="cmd-purifier">—</div>
+            <div class="ai-cmd-details" id="detail-purifier">—</div>
+          </div>
+
+          <div class="ai-cmd-card">
+            <div class="ai-cmd-card-top">
+              <div class="ai-cmd-title-wrap">
+                <div class="ai-cmd-icon">🪟</div>
+                <div class="ai-cmd-name">Ventilation (ระบบระบายอากาศ)</div>
+              </div>
+              <span class="ai-badge pill-warn" id="badge-ventilation">Exchange</span>
+            </div>
+            <div class="ai-cmd-state" id="cmd-ventilation">—</div>
+            <div class="ai-cmd-details" id="detail-ventilation">—</div>
+          </div>
+
+          <div class="ai-cmd-card">
+            <div class="ai-cmd-card-top">
+              <div class="ai-cmd-title-wrap">
+                <div class="ai-cmd-icon">❄️</div>
+                <div class="ai-cmd-name">Air Conditioning (ระบบปรับอากาศ)</div>
+              </div>
+              <span class="ai-badge pill-ok" id="badge-ac">Eco</span>
+            </div>
+            <div class="ai-cmd-state" id="cmd-ac">—</div>
+            <div class="ai-cmd-details" id="detail-ac">—</div>
+          </div>
+
+          <div class="ai-cmd-card">
+            <div class="ai-cmd-card-top">
+              <div class="ai-cmd-title-wrap">
+                <div class="ai-cmd-icon">💧</div>
+                <div class="ai-cmd-name">Humidity Control (ควบคุมความชื้น)</div>
+              </div>
+              <span class="ai-badge pill-warn" id="badge-humidity">Dehumidify</span>
+            </div>
+            <div class="ai-cmd-state" id="cmd-humidity">—</div>
+            <div class="ai-cmd-details" id="detail-humidity">—</div>
+          </div>
+
+        </div>
+
+        <!-- AI Natural Language Insight Box -->
+        <div class="ai-insight-box" id="aiInsightBox">
+          💡 <strong>AI Reasoning</strong>: กำลังประมวลผลโมเดลโครงข่ายประสาทเทียม...
+        </div>
+
+        <div class="ai-modal-footer">
+          <span class="ai-modal-hint">💡 เคล็ดลับ: กด <kbd>ESC</kbd> หรือคลิกพื้นที่ด้านนอกเพื่อปิด | ลากปุ่ม 🤖 ไปวางมุมจอที่ต้องการได้อิสระ</span>
+          <button class="ai-modal-ack-btn" onclick="closeAIModal()">ปิดหน้าต่าง</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Real-Time Emergency Air Quality Pop-Up Modal -->
+    <div class="alert-modal-overlay" id="alertModalOverlay" hidden>
+      <div class="alert-modal-card">
+        <div class="alert-modal-header">
+          <div class="alert-modal-badge">⚠️ EMERGENCY IAQ ALERT</div>
+          <button class="alert-modal-close" onclick="closeAlertModal()" title="ปิดหน้าต่าง">&#x2715;</button>
+        </div>
+        <div class="alert-modal-body">
+          <div class="alert-modal-icon-wrap">
+            <div class="alert-modal-icon">🚨</div>
+          </div>
+          <h2 class="alert-modal-title">ตรวจพบคุณภาพอากาศเกินเกณฑ์มาตรฐาน!</h2>
+          <p class="alert-modal-sub">ห้อง <strong>SITE 4 ICT 401</strong>
+            ตรวจพบดัชนีเซ็นเซอร์ผิดปกติที่อาจส่งผลกระทบต่อสุขภาพ:</p>
+          <div class="alert-modal-list" id="alertModalList">
+            <!-- Dynamic Alert Items -->
+          </div>
+          <div class="alert-modal-action-box" id="alertModalAiAction">
+            💡 <strong>คำแนะนำ AI:</strong> ระบบสั่งการเปิดเครื่องฟอกอากาศและระบายอากาศแบบเร่งด่วนโดยอัตโนมัติแล้ว
+          </div>
+        </div>
+        <div class="alert-modal-footer">
+          <button class="btn-alert-ack" onclick="closeAlertModal()">✅ รับทราบและปิดแจ้งเตือน (Acknowledge)</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="js/app.js?v=2.5"></script>
 </body>
+
 </html>

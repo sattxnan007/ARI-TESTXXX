@@ -1085,14 +1085,152 @@ body.sidebar-collapsed .main-content {
   transition: width 0.8s cubic-bezier(.4,0,.2,1);
 }
 
-/* AI Smart Automation Panel */
-.ai-control-panel {
-  padding: 22px 24px;
+/* ──────────────────────────────────────────────
+   AI Floating Draggable Widget & Modal System
+────────────────────────────────────────────── */
+
+/* Draggable Floating Button */
+.ai-floating-widget {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 9990;
+  display: none; /* Shown dynamically via JS when logged in */
+  align-items: center;
+  gap: 10px;
   background: var(--card-bg);
-  border-radius: var(--radius);
+  border: 1px solid var(--primary);
+  padding: 8px 16px 8px 10px;
+  border-radius: 50px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), 0 0 15px rgba(13, 148, 136, 0.25);
+  backdrop-filter: blur(16px);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.ai-floating-widget:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.28), 0 0 20px rgba(13, 148, 136, 0.4);
+  border-color: var(--secondary);
+}
+
+.ai-floating-widget.dragging {
+  cursor: grabbing;
+  opacity: 0.92;
+  transform: scale(1.06);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35), 0 0 25px rgba(13, 148, 136, 0.5);
+  transition: none; /* smooth instant drag tracking */
+}
+
+.ai-floating-drag-grip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 4px 2px 2px;
+  opacity: 0.4;
+  cursor: grab;
+}
+
+.ai-floating-drag-grip span {
+  display: block;
+  width: 4px;
+  height: 4px;
+  background: var(--text-dim);
+  border-radius: 50%;
+}
+
+.ai-floating-widget:hover .ai-floating-drag-grip {
+  opacity: 0.8;
+}
+
+.ai-floating-icon-wrap {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(13, 148, 136, 0.2), rgba(2, 132, 199, 0.2));
+  border: 1px solid rgba(13, 148, 136, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+
+.ai-floating-pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+  animation: aiPulseRing 2.4s infinite ease-out;
+  pointer-events: none;
+}
+
+@keyframes aiPulseRing {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  50% { transform: scale(1.25); opacity: 0; }
+  100% { transform: scale(0.9); opacity: 0; }
+}
+
+.ai-floating-text-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ai-floating-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ai-floating-score {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.1;
+}
+
+/* AI Smart Automation Modal Backdrop & Card */
+.ai-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9995;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.ai-modal-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ai-modal-card {
+  width: 100%;
+  max-width: 860px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px 28px;
+  background: var(--card-bg);
+  border-radius: 20px;
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  margin-bottom: 24px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+  transform: scale(0.92) translateY(16px);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ai-modal-backdrop.open .ai-modal-card {
+  transform: scale(1) translateY(0);
 }
 
 .ai-panel-header {
@@ -1102,12 +1240,19 @@ body.sidebar-collapsed .main-content {
   margin-bottom: 18px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
+  gap: 16px;
 }
 
 .ai-header-left {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.ai-header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .ai-brain-icon {
@@ -1121,6 +1266,7 @@ body.sidebar-collapsed .main-content {
   justify-content: center;
   font-size: 1.4rem;
   box-shadow: 0 4px 12px rgba(13, 148, 136, 0.1);
+  flex-shrink: 0;
 }
 
 .ai-panel-title {
@@ -1161,12 +1307,40 @@ body.sidebar-collapsed .main-content {
   line-height: 1.1;
 }
 
+.ai-modal-close-btn {
+  background: rgba(100, 116, 139, 0.12);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), transform var(--transition);
+}
+
+.ai-modal-close-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+  transform: scale(1.05);
+}
+
 /* AI Command Grid (4 Cards) */
 .ai-cmd-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin-bottom: 16px;
+}
+
+@media (max-width: 640px) {
+  .ai-cmd-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ai-cmd-card {
@@ -1235,6 +1409,50 @@ body.sidebar-collapsed .main-content {
   font-size: 0.82rem;
   color: var(--text);
   line-height: 1.5;
+  margin-bottom: 18px;
+}
+
+/* AI Modal Footer */
+.ai-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  gap: 12px;
+}
+
+.ai-modal-hint {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+}
+
+.ai-modal-hint kbd {
+  background: var(--neutral-light);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 0.72rem;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.ai-modal-ack-btn {
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition), transform var(--transition);
+  white-space: nowrap;
+}
+
+.ai-modal-ack-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 /* Trend chart */
@@ -1328,3 +1546,358 @@ body.sidebar-collapsed .main-content {
   .main-content { padding: 0 12px 40px; }
   .hero-title { font-size: 1.2rem; }
 }
+
+/* ==========================================================================
+   Real-Time Air Quality Alert Banner & Pulsing Animation
+   ========================================================================== */
+.iaq-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-left: 5px solid #ef4444;
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.18);
+  animation: slideDownAlert 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDownAlert {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.alert-banner-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+  animation: alertIconBounce 1.5s infinite ease-in-out;
+}
+
+@keyframes alertIconBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
+.alert-banner-content {
+  flex: 1;
+}
+
+.alert-banner-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #dc2626;
+  margin-bottom: 4px;
+}
+:root[data-theme="dark"] .alert-banner-title {
+  color: #fca5a5;
+}
+
+.alert-banner-desc {
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--text-main);
+  font-weight: 500;
+}
+
+.alert-banner-dismiss {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.alert-banner-dismiss:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+/* Sound Alert Toggle Button in TopBar (Pill Theme Matching User Pill) */
+.sound-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 50px;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  box-shadow: none;
+  margin: 0 2px 0 0;
+  transition: all var(--transition);
+}
+.sound-toggle-btn:hover {
+  background: var(--primary-bg);
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.15);
+}
+.sound-toggle-btn.muted {
+  background: rgba(115, 120, 119, 0.08);
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+
+/* Test Pop-Up Alert Button */
+.btn-test-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  padding: 6px 14px;
+  border-radius: 50px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: all var(--transition);
+}
+.btn-test-alert:hover {
+  background: #ef4444;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+/* Pulsing highlight for cards exceeding thresholds */
+.card-alert-pulse {
+  border-color: rgba(239, 68, 68, 0.8) !important;
+  animation: cardAlertGlow 1.8s infinite ease-in-out !important;
+}
+
+@keyframes cardAlertGlow {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.3), inset 0 0 8px rgba(239, 68, 68, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(239, 68, 68, 0.6), inset 0 0 16px rgba(239, 68, 68, 0.2);
+  }
+}
+
+/* ==========================================================================
+   Real-Time Emergency Pop-Up Alert Modal
+   ========================================================================== */
+.alert-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeInModal 0.25s ease-out;
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.alert-modal-card {
+  width: 100%;
+  max-width: 500px;
+  background: var(--card-bg);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-top: 6px solid #ef4444;
+  border-radius: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35), 0 0 30px rgba(239, 68, 68, 0.2);
+  overflow: hidden;
+  animation: scalePopModal 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes scalePopModal {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.alert-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.alert-modal-badge {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 4px 12px;
+  border-radius: 50px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.alert-modal-close {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.alert-modal-close:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+.alert-modal-body {
+  padding: 22px;
+  text-align: center;
+}
+
+.alert-modal-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
+  border: 2px solid rgba(239, 68, 68, 0.3);
+  margin-bottom: 14px;
+  animation: pulseIcon 1.5s infinite ease-in-out;
+}
+
+@keyframes pulseIcon {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { transform: scale(1.08); box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+}
+
+.alert-modal-icon {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.alert-modal-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #dc2626;
+  margin-bottom: 6px;
+}
+:root[data-theme="dark"] .alert-modal-title {
+  color: #fca5a5;
+}
+
+.alert-modal-sub {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.alert-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+  text-align: left;
+}
+
+.alert-modal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.alert-modal-item-val {
+  color: #dc2626;
+  font-weight: 800;
+}
+:root[data-theme="dark"] .alert-modal-item-val {
+  color: #f87171;
+}
+
+.alert-modal-action-box {
+  background: var(--primary-bg);
+  border: 1px solid rgba(13, 148, 136, 0.25);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 0.84rem;
+  color: var(--primary);
+  text-align: left;
+  line-height: 1.45;
+}
+
+.alert-modal-footer {
+  padding: 14px 22px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.btn-alert-ack {
+  width: 100%;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.35);
+}
+
+.btn-alert-ack:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(239, 68, 68, 0.45);
+}
+.btn-alert-ack:active {
+  transform: translateY(0);
+}
+
+

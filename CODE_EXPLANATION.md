@@ -99,9 +99,14 @@ c:\Users\tn_setthanan\Desktop\Copy\
    - **ข้อดี**: ไม่ต้องพึ่งพาฐานข้อมูลหนัก (เช่น MySQL/MongoDB) แต่คงเก็บข้อมูลย้อนหลังได้สูงสุด **2,000 จุด (~16 ชั่วโมง)** โดยใช้ระบบ Sliding Window ป้องกันไม่ให้ไฟล์มีขนาดใหญ่เกินไป
    - เมื่อกด F5 หรือเปิดหน้าเว็บจากอุปกรณ์อื่น กราฟเส้นแนวโน้มย้อนหลังจะโหลดข้อมูลที่เซิร์ฟเวอร์สะสมไว้ออกมาแสดงผลได้ทันที
 
-4. **Action Router & Helper Functions (`makeCurl()`, `doLogin()`, `checkSession()`, `getSpecData()`, `getHistory()`, `doLogout()`)**:
+4. **Server-Side 45-Minute File Cache Logger (`cache_45m_ict401.json`)**:
+   - `save45MinCacheRecord($data)`: บันทึกข้อมูลสภาพแวดล้อมลงในไฟล์ `cache_45m_ict401.json` ทุกๆ 45 นาทีอัตโนมัติ โดยไม่ต้องใช้ฐานข้อมูล (Database-Free File Caching)
+   - `get45MinCacheRecords()`: อ่านประวัติย้อนหลังทุกๆ 45 นาทีส่งกลับไปยัง UI เพื่อนำไปพล็อตบนกราฟเส้นแนวโน้มย้อนหลัง (`tf-45m`)
+   - `getSpecData()`: แนบอาร์เรย์ `history45m` กลับไปยังไคลเอนต์พร้อมกับข้อมูล Realtime
+   - `get45MinHistory`: API Action Router เพิ่มเติมสำหรับดึงไฟล์แคช 45 นาทีโดยเฉพาะ
+5. **Action Router & Helper Functions (`makeCurl()`, `doLogin()`, `checkSession()`, `getSpecData()`, `getHistory()`, `doLogout()`)**:
    - `checkSession()`: ตรวจสอบสถานะการเข้าสู่ระบบในเซสชัน PHP และส่งกลับสถานะ `loggedIn` พร้อมชื่อบัญชีผู้ใช้เมื่อมีการรีเฟรชหน้าจอ (F5)
-   - `getSpecData()`: ดึงข้อมูลเฉพาะห้อง SITE 4 ICT 401 แนบอาร์เรย์ประวัติ `history` จากไฟล์แคชเซิร์ฟเวอร์ส่งกลับไปยังเบราว์เซอร์
+   - `getSpecData()`: ดึงข้อมูลเฉพาะห้อง SITE 4 ICT 401 แนบอาร์เรย์ประวัติ `history` และ `history45m` จากไฟล์แคชเซิร์ฟเวอร์ส่งกลับไปยังเบราว์เซอร์
    - `clearAllCache()`: ล้างแคชคำตอบทั้งหมดทันทีที่มีการ Login ใหม่ หรือ Logout ออกจากระบบ
 
 ---
@@ -133,8 +138,7 @@ c:\Users\tn_setthanan\Desktop\Copy\
    - `renderSiteDetail(data)`: อัปเดตการ์ดตัววัดทั้ง 7 ตัวของ Site 4 (คำนวณเปอร์เซ็นต์หลอด Progress Bar และเปลี่ยนสีตามระดับความอันตราย)
    - `downloadCSV()`: ส่งออกไฟล์ CSV ประวัติข้อมูลย้อนหลังของห้อง ICT401
 
-6. **Control Recommendations Logic (บรรทัด 560–586)**:
-6. **AI Smart HVAC Automation Engine (บรรทัด 520–635)**:
+6. **AI Smart HVAC Automation Engine & Real-Time Alert System**:
    - `runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc)`: ประมวลผลด้วย AI Inference Model จำลองแบบ Multi-Variable Joint Decision Matrix:
      - **AI IAQ Score (0-100%)**: คำนวณคะแนนดัชนีสุขภาพอากาศรวมจาก PM2.5, PM10, CO2, EVOC, อุณหภูมิและความชื้น
      - **Steadman Heat Index Model**: คำนวณอุณหภูมิที่รู้สึกจริง (Perceived Temperature) ตามความชื้นสัมพัทธ์
@@ -143,6 +147,11 @@ c:\Users\tn_setthanan\Desktop\Copy\
      - **Air Conditioner AI**: ประเมินสภาวะสบายทางความร้อน (PMV Index) ปรับ Cool High / Cool Auto / Eco Saving
      - **Humidity Control AI**: คำนวณโหมดดึงความชื้น (Dehumidifier High/Low) ป้องกันไวรัสและเชื้อรา หรือเติมความชื้น (Humidifier)
      - **AI Reasoning Banner**: สร้างคำอธิบายแผนการทำงานของ AI ในภาษาธรรมชาติ (Natural Language AI Insight)
+   - `checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc)`: ระบบตรวจสอบค่าเกินมาตรฐาน Real-time:
+     - **Threshold Detection**: เช็คเกณฑ์อันตราย (PM2.5 > 35, PM10 > 100, CO2 > 1000, Temp > 30°C, Humid > 70%, EVOC > 50)
+     - **Alert Banner**: แสดงแถบแจ้งเตือนสีกระตุ้นฉุกเฉินสไตล์ Glassmorphic ลอยเด่นที่ด้านบน Dashboard
+     - **Pulsing Card Effect**: ติดเอฟเฟกต์กระพริบเรืองแสงสีแดง (`card-alert-pulse`) บนการ์ดตัววัดที่ผิดปกติ
+     - **Web Audio API Synth & Sound Toggle**: สังเคราะห์เสียง Beep แจ้งเตือนแบบไดนามิกพร้อมปุ่มเปิด/ปิดเสียงบน Top Bar
 
 7. **Semi-Circle Gauges Rendering (บรรทัด 588–693)**:
    - `drawGauge(canvasId, value, max, ranges, label, unit)`: ใช้อัลกอริทึม HTML5 Canvas 2D Context วาดเกจทรงโค้งครึ่งวงกลม

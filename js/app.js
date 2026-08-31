@@ -13,13 +13,22 @@ const CONFIG = {
   demoMode: false,  // false = ใช้ข้อมูลจริงจาก AIIR API ผ่าน proxy.php
   autoRefreshMs: 30000,
   trendMaxPoints: 10,
+  thresholds: {
+    pm25: 35.0,   // µg/m³
+    pm10: 100.0,  // µg/m³
+    co2: 1000,    // ppm
+    temp: 30.0,   // °C
+    humid: 70.0,  // %RH
+    evoc: 50.0,   // ppb
+  },
 };
 
 // App state
 const STATE = {
   isLoggedIn: false,
   username: '',
-  timeFilter: '30m',
+  sessionStartTime: null,
+  timeFilter: 'all',
   site4Data: null,
   historyLogs: [],
   historyPM25: [],
@@ -29,12 +38,28 @@ const STATE = {
   autoRefreshTimer: null,
   trendChart: null,
   gaugeCharts: { pm25: null, co2: null, temp: null },
+  soundAlertEnabled: true,
 };
 
+// ──────────────────────────────────────────────
 // Utility helpers
+// ──────────────────────────────────────────────
 function $(id) { return document.getElementById(id); }
-
 function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function rand(min, max, decimals = 1) { return parseFloat((Math.random() * (max - min) + min).toFixed(decimals)); }
+
+function debounce(fn, ms) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+function toggleEl(id, show, display = 'flex') {
+  const el = $(id);
+  if (!el) return;
+  el.hidden = !show;
+  el.style.setProperty('display', show ? display : 'none', 'important');
+}
 
 function nowStr() {
   const d = new Date();
@@ -51,7 +76,62 @@ function showToast(msg, type = 'info', duration = 3500) {
   t._timer = setTimeout(() => { t.className = 'toast'; }, duration);
 }
 
+// ──────────────────────────────────────────────
+// Metric level definitions (replaces 7 separate functions)
+// ──────────────────────────────────────────────
+const METRIC_DEFS = {
+  pm25: [
+    { max: 12, label: 'ดีเยี่ยม', cls: 'good', color: '#0D9488', pill: 'pill-ok' },
+    { max: 35, label: 'ปานกลาง', cls: 'warn', color: '#0284C7', pill: 'pill-warn' },
+    { max: Infinity, label: 'อันตราย', cls: 'bad', color: '#C36D4B', pill: 'pill-bad' },
+  ],
+  pm10: [
+    { max: 50, label: 'ดีเยี่ยม', cls: 'good', color: '#0D9488' },
+    { max: 100, label: 'ปานกลาง', cls: 'warn', color: '#0284C7' },
+    { max: Infinity, label: 'อันตราย', cls: 'bad', color: '#C36D4B' },
+  ],
+  co2: [
+    { max: 800, label: 'สะอาด', cls: 'good', color: '#0D9488' },
+    { max: 1000, label: 'เพิ่มขึ้น', cls: 'warn', color: '#0284C7' },
+    { max: Infinity, label: 'อับชื้น', cls: 'bad', color: '#C36D4B' },
+  ],
+};
+
+function getLevel(key, value) {
+  const defs = METRIC_DEFS[key];
+  if (!defs) return { label: '', cls: '', color: '#888', pill: '' };
+  for (const d of defs) {
+    if (value <= d.max) return d;
+  }
+  return defs[defs.length - 1];
+}
+
+function pm25Pill(v) {
+  const d = getLevel('pm25', v);
+  return { label: d.label, pillClass: d.pill || 'pill-ok' };
+}
+
+// ──────────────────────────────────────────────
+// Alert definitions (replaces 6 if-blocks)
+// ──────────────────────────────────────────────
+const ALERT_DEFS = [
+  { key: 'pm25', icon: '🌫️', name: 'PM2.5 (ฝุ่นละอองขนาดเล็ก)', unit: 'µg/m³', decimals: 1, shortName: 'PM2.5' },
+  { key: 'pm10', icon: '💨', name: 'PM10 (ฝุ่นขนาดกลาง)', unit: 'µg/m³', decimals: 1, shortName: 'PM10' },
+  { key: 'co2', icon: '☁️', name: 'CO2 (คาร์บอนไดออกไซด์)', unit: 'ppm', decimals: 0, shortName: 'CO2' },
+  {
+    key: 'temp', icon: '🌡️', name: 'อุณหภูมิห้อง (Room Temp)', unit: '°C', decimals: 1, shortName: 'อุณหภูมิ',
+    format: v => `${v.toFixed(1)}°C`, limitFmt: t => `> ${t}°C`
+  },
+  {
+    key: 'humid', icon: '💧', name: 'ความชื้นสัมพัทธ์ (Relative Humid)', unit: '%RH', decimals: 1, shortName: 'ความชื้น',
+    format: v => `${v.toFixed(1)} %RH`, limitFmt: t => `> ${t}%`
+  },
+  { key: 'evoc', icon: '🧪', name: 'EVOC (สารระเหยง่าย)', unit: 'ppb', decimals: 0, shortName: 'EVOC' },
+];
+
+// ──────────────────────────────────────────────
 // Sidebar controls
+// ──────────────────────────────────────────────
 function toggleSidebar() {
   const sb = $('sidebar');
   const ov = $('overlay');
@@ -60,15 +140,9 @@ function toggleSidebar() {
 }
 
 function toggleSidebarCollapse() {
-  const isMobile = window.innerWidth <= 768;
-  if (isMobile) {
-    toggleSidebar();
-  } else {
-    document.body.classList.toggle('sidebar-collapsed');
-  }
-  setTimeout(() => {
-    if (STATE.site4Data) refreshGauges();
-  }, 300);
+  if (window.innerWidth <= 768) { toggleSidebar(); }
+  else { document.body.classList.toggle('sidebar-collapsed'); }
+  setTimeout(() => { if (STATE.site4Data) refreshGauges(); }, 300);
 }
 
 // Password visibility toggle
@@ -82,15 +156,14 @@ function togglePw() {
 
 // Navigation tab compatibility placeholder
 function switchTab(name) {
-  if (STATE.site4Data) {
-    setTimeout(refreshGauges, 60);
-  }
+  if (STATE.site4Data) setTimeout(refreshGauges, 60);
 }
 
+// ──────────────────────────────────────────────
 // Auto refresh handling
+// ──────────────────────────────────────────────
 function toggleAutoRefresh() {
-  const toggle = $('autoRefreshToggle');
-  const on = toggle ? toggle.checked : false;
+  const on = $('autoRefreshToggle')?.checked || false;
   if (on) {
     if (STATE.isLoggedIn) startAutoRefresh();
     showToast('Auto-Refresh เปิดแล้ว (ทุก 30 วินาที)', 'info');
@@ -106,79 +179,75 @@ function startAutoRefresh() {
 }
 
 function stopAutoRefresh() {
-  if (STATE.autoRefreshTimer) {
-    clearInterval(STATE.autoRefreshTimer);
-    STATE.autoRefreshTimer = null;
-  }
+  if (STATE.autoRefreshTimer) { clearInterval(STATE.autoRefreshTimer); STATE.autoRefreshTimer = null; }
 }
 
+// ──────────────────────────────────────────────
 // Connection status & user display handling
+// ──────────────────────────────────────────────
 function setConnected(on, username = '') {
   STATE.isLoggedIn = on;
   const badge = $('statusBadge');
   const dot = $('statusDot');
   const text = $('statusText');
 
-  const loginF = $('loginForm');
-  const userCard = $('userSessionCard');
-  const topArea = $('topbarUserArea');
-  const sideDisp = $('sidebarUserDisplay');
-  const topDisp = $('topbarUserDisplay');
-
   if (on) {
-    if (username) {
-      STATE.username = username;
-      localStorage.setItem('aiir_user', username);
-    } else {
-      STATE.username = localStorage.getItem('aiir_user') || STATE.username || 'Admin';
-    }
+    STATE.username = username || localStorage.getItem('aiir_user') || STATE.username || 'Admin';
+    if (username) localStorage.setItem('aiir_user', username);
 
     if (badge) badge.className = 'status-badge badge-online';
     if (dot) dot.className = 'dot dot-green';
     if (text) text.textContent = 'Connected';
 
-    if (sideDisp) sideDisp.textContent = STATE.username;
-    if (topDisp) topDisp.textContent = STATE.username;
+    const sd = $('sidebarUserDisplay'), td = $('topbarUserDisplay');
+    if (sd) sd.textContent = STATE.username;
+    if (td) td.textContent = STATE.username;
 
-    if (loginF) {
-      loginF.hidden = true;
-      loginF.style.setProperty('display', 'none', 'important');
-    }
-    if (userCard) {
-      userCard.hidden = false;
-      userCard.style.setProperty('display', 'flex', 'important');
-    }
-    if (topArea) {
-      topArea.hidden = false;
-      topArea.style.setProperty('display', 'flex', 'important');
-    }
+    toggleEl('loginForm', false);
+    toggleEl('userSessionCard', true);
+    toggleEl('topbarUserArea', true);
 
     // Auto-collapse sidebar on login for full dashboard view
     document.body.classList.add('sidebar-collapsed');
     const sb = $('sidebar');
     if (sb) sb.classList.remove('open');
 
+    // Initialize clean session timeline from login time
+    if (!STATE.sessionStartTime) {
+      STATE.sessionStartTime = Date.now();
+      STATE.historyLogs = [];
+      STATE.historyLabels = [];
+      STATE.historyPM25 = [];
+      STATE.historyCO2 = [];
+      STATE.historyTemp = [];
+      if (STATE.trendChart) {
+        STATE.trendChart.destroy();
+        STATE.trendChart = null;
+      }
+    }
+
     showDashboard();
   } else {
     STATE.username = '';
+    STATE.sessionStartTime = null;
+    STATE.historyLogs = [];
+    STATE.historyLabels = [];
+    STATE.historyPM25 = [];
+    STATE.historyCO2 = [];
+    STATE.historyTemp = [];
+    if (STATE.trendChart) {
+      STATE.trendChart.destroy();
+      STATE.trendChart = null;
+    }
     localStorage.removeItem('aiir_user');
 
     if (badge) badge.className = 'status-badge badge-offline';
     if (dot) dot.className = 'dot dot-red';
     if (text) text.textContent = 'Disconnected';
 
-    if (loginF) {
-      loginF.hidden = false;
-      loginF.style.setProperty('display', 'flex', 'important');
-    }
-    if (userCard) {
-      userCard.hidden = true;
-      userCard.style.setProperty('display', 'none', 'important');
-    }
-    if (topArea) {
-      topArea.hidden = true;
-      topArea.style.setProperty('display', 'none', 'important');
-    }
+    toggleEl('loginForm', true);
+    toggleEl('userSessionCard', false);
+    toggleEl('topbarUserArea', false);
 
     document.body.classList.remove('sidebar-collapsed');
     hideDashboard();
@@ -193,17 +262,12 @@ async function checkAuthOnStartup() {
     const res = await fetch('proxy.php?action=checkSession');
     const json = await res.json();
     if (json.ok && json.loggedIn) {
-      const activeUser = json.user || savedUser || 'Admin';
-      setConnected(true, activeUser);
+      setConnected(true, json.user || savedUser || 'Admin');
       fetchData();
       if ($('autoRefreshToggle').checked) startAutoRefresh();
       return;
     }
-  } catch (e) {
-    console.warn('[AIIR Session Check]', e);
-  }
-
-  // If backend session not active
+  } catch (e) { console.warn('[AIIR Session Check]', e); }
   setConnected(false);
 }
 
@@ -215,7 +279,9 @@ function updateLastUpdate(timeStr) {
   if (el) el.textContent = t;
 }
 
+// ──────────────────────────────────────────────
 // Authentication handling
+// ──────────────────────────────────────────────
 async function handleLogin(e) {
   e.preventDefault();
   const user = $('inputUser').value.trim();
@@ -226,15 +292,13 @@ async function handleLogin(e) {
   $('loginSpinner').hidden = false;
   $('loginBtn').disabled = true;
 
-  const loginRes = CONFIG.demoMode
-    ? await mockLogin(user, pass)
-    : await realLogin(user, pass);
+  const loginRes = CONFIG.demoMode ? await mockLogin(user, pass) : await realLogin(user, pass);
 
   $('loginBtnText').hidden = false;
   $('loginSpinner').hidden = true;
   $('loginBtn').disabled = false;
 
-  if (loginRes && loginRes.ok) {
+  if (loginRes?.ok) {
     const userAccount = loginRes.user || user;
     setConnected(true, userAccount);
     showToast(`✅ เชื่อมต่อสำเร็จ! ยินดีต้อนรับ ${userAccount}`, 'success');
@@ -248,39 +312,23 @@ async function handleLogin(e) {
 
 async function handleLogout() {
   showToast('กำลังออกจากระบบ...', 'info', 1500);
-  try {
-    await fetch('proxy.php?action=logout');
-  } catch (e) {
-    console.warn('[AIIR Logout]', e);
-  }
+  try { await fetch('proxy.php?action=logout'); } catch (e) { console.warn('[AIIR Logout]', e); }
   setConnected(false);
   showToast('🚪 ออกจากระบบเรียบร้อยแล้ว', 'info');
 }
 
 function showDashboard() {
-  const ws = $('welcomeScreen');
-  const db = $('dashboard');
-  if (ws) {
-    ws.hidden = true;
-    ws.style.setProperty('display', 'none', 'important');
-  }
-  if (db) {
-    db.hidden = false;
-    db.style.setProperty('display', 'block', 'important');
-  }
+  toggleEl('welcomeScreen', false);
+  toggleEl('dashboard', true, 'block');
+  toggleEl('aiFloatingBtn', true, 'flex');
+  initAIFloatingWidget();
 }
 
 function hideDashboard() {
-  const ws = $('welcomeScreen');
-  const db = $('dashboard');
-  if (ws) {
-    ws.hidden = false;
-    ws.style.setProperty('display', 'flex', 'important');
-  }
-  if (db) {
-    db.hidden = true;
-    db.style.setProperty('display', 'none', 'important');
-  }
+  toggleEl('welcomeScreen', true);
+  toggleEl('dashboard', false, 'block');
+  toggleEl('aiFloatingBtn', false, 'flex');
+  closeAIModal();
 }
 
 async function mockLogin(user, pass) {
@@ -304,18 +352,16 @@ async function realLogin(user, pass) {
   }
 }
 
+// ──────────────────────────────────────────────
 // Data fetching from API (Room SITE 4 ICT 401 Only)
+// ──────────────────────────────────────────────
 async function fetchData() {
   if (!STATE.isLoggedIn) return;
-
   const btn = $('manualRefreshBtn');
   if (btn) btn.classList.add('spinning');
 
   try {
-    const spec = CONFIG.demoMode
-      ? await mockFetchSite4()
-      : await realFetchSite4();
-
+    const spec = CONFIG.demoMode ? await mockFetchSite4() : await realFetchSite4();
     if (spec) {
       const pm25Val = parseFloat(spec.pm25 ?? spec.PM25 ?? 0);
       const pm10Val = parseFloat(spec.pm10 ?? spec.PM10 ?? 0);
@@ -327,24 +373,14 @@ async function fetchData() {
       const specUpd = spec.lastUpdate || nowStr();
 
       STATE.site4Data = {
-        Site: '4',
-        SiteName: 'Site 4 - ICT401',
-        'PM2.5': pm25Val,
-        'PM10': pm10Val,
-        'CO2': co2Val,
-        'RSSI': rssiVal,
-        temp: tempVal,
-        humid: humidVal,
-        evoc: evocVal,
+        Site: '4', SiteName: 'Site 4 - ICT401',
+        'PM2.5': pm25Val, 'PM10': pm10Val, 'CO2': co2Val,
+        'RSSI': rssiVal, temp: tempVal, humid: humidVal, evoc: evocVal,
         lastUpdate: specUpd,
       };
 
-      if (Array.isArray(spec.history) && spec.history.length > 0) {
-        STATE.historyLogs = spec.history;
-        updateTrendChart();
-      } else {
-        appendHistory(STATE.site4Data);
-      }
+      // Continuously append each live reading to session history based on machine time
+      appendHistory(STATE.site4Data);
 
       renderSiteDetail(STATE.site4Data);
       updateLastUpdate(specUpd);
@@ -367,65 +403,64 @@ async function realFetchSite4() {
       if (json.error === 'session_expired') {
         setConnected(false);
         showToast('Session หมดอายุ กรุณา Login ใหม่', 'error', 5000);
-      } else {
-        console.warn('[getSpecData]', json.error, json.raw ?? '');
-      }
+      } else { console.warn('[getSpecData]', json.error, json.raw ?? ''); }
       return null;
     }
     return json;
-  } catch (e) {
-    console.error('[getSpecData] fetch error:', e);
-    return null;
-  }
-}
-
-function rand(min, max, decimals = 1) {
-  return parseFloat((Math.random() * (max - min) + min).toFixed(decimals));
+  } catch (e) { console.error('[getSpecData] fetch error:', e); return null; }
 }
 
 async function mockFetchSite4() {
   await sleep(600 + Math.random() * 400);
-  const pm25 = rand(5, 60);
-  const pm10 = rand(pm25, pm25 * 1.8);
-  const co2 = rand(400, 1400);
-  const temp = rand(22, 32);
-  const humid = rand(35, 75);
-  const evoc = rand(5, 45);
-  const rssi = rand(-85, -40, 0);
-  return {
-    ok: true,
-    pm25, pm10, co2, temp, humid, evoc, rssi,
-    lastUpdate: nowStr(),
-  };
+  const pm25 = rand(5, 60), pm10 = rand(pm25, pm25 * 1.8);
+  const co2 = rand(400, 1400), temp = rand(22, 32);
+  const humid = rand(35, 75), evoc = rand(5, 45), rssi = rand(-85, -40, 0);
+
+  // Mock 45-minute interval cache logs
+  const nowTs = Date.now();
+  const mock45m = [];
+  for (let i = 5; i >= 0; i--) {
+    const t = new Date(nowTs - i * 45 * 60 * 1000);
+    const label = `${String(t.getDate()).padStart(2, '0')}/${String(t.getMonth() + 1).padStart(2, '0')} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    mock45m.push({
+      timestamp: t.getTime(), label, time: `${label}:00`, site: 'Site 4 - ICT401',
+      pm25: rand(10, 45), pm10: rand(20, 70), co2: rand(450, 1100),
+      temp: rand(23, 29), humid: rand(40, 65), evoc: rand(10, 35),
+      rssi: '-65', iaqScore: rand(70, 95, 0)
+    });
+  }
+  return { ok: true, pm25, pm10, co2, temp, humid, evoc, rssi, lastUpdate: nowStr(), history45m: mock45m };
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-// Time filter switch handler
+// ──────────────────────────────────────────────
+// Time filter & History tracking (Synced with local machine time)
+// ──────────────────────────────────────────────
 function setTimeFilter(mode) {
   STATE.timeFilter = mode;
-  ['tf-30m', 'tf-1h', 'tf-all'].forEach(id => {
+  ['tf-all', 'tf-15m', 'tf-30m', 'tf-1h'].forEach(id => {
     const btn = $(id);
     if (btn) btn.classList.toggle('active', id === `tf-${mode}`);
   });
   updateTrendChart();
-  const label = mode === '30m' ? '30 นาทีล่าสุด' : mode === '1h' ? '1 ชั่วโมงล่าสุด' : 'เรียลไทม์ทั้งหมด';
+  const label = { '15m': '15 นาทีล่าสุด', '30m': '30 นาทีล่าสุด', '1h': '1 ชั่วโมงล่าสุด' }[mode] || 'ทั้งหมดในรอบ Login';
   showToast(`📊 แสดงกราฟช่วงเวลา: ${label}`, 'info', 2000);
 }
 
-// History data tracking
 function appendHistory(data) {
+  if (!data) return;
   const nowTs = Date.now();
   const label = new Date(nowTs).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
   const pm25Val = parseFloat(data['PM2.5'] ?? data.pm25 ?? 0);
-  const co2Val  = parseFloat(data.CO2 ?? data.co2 ?? 0);
+  const co2Val = parseFloat(data.CO2 ?? data.co2 ?? 0);
   const tempVal = parseFloat(data.temp ?? 0);
 
-  const push = (arr, val) => {
-    arr.push(val ?? 0);
-    if (arr.length > 200) arr.shift();
-  };
+  // Prevent duplicate addition if called within 2 seconds
+  const lastEntry = STATE.historyLogs[STATE.historyLogs.length - 1];
+  if (lastEntry && (nowTs - lastEntry.timestamp < 2000)) {
+    return;
+  }
+
+  const push = (arr, val) => { arr.push(val ?? 0); if (arr.length > 300) arr.shift(); };
   push(STATE.historyLabels, label);
   push(STATE.historyPM25, pm25Val);
   push(STATE.historyCO2, co2Val);
@@ -433,8 +468,8 @@ function appendHistory(data) {
 
   STATE.historyLogs.push({
     timestamp: nowTs,
-    label: label,
-    time: data.lastUpdate || nowStr(),
+    label,
+    time: `${new Date(nowTs).toLocaleDateString('th-TH')} ${label}`,
     site: 'Site 4 - ICT401',
     pm25: pm25Val,
     pm10: parseFloat(data['PM10'] ?? data.pm10 ?? 0),
@@ -444,17 +479,17 @@ function appendHistory(data) {
     evoc: parseFloat(data.evoc ?? 0),
     rssi: String(data.RSSI ?? data.rssi ?? '0'),
   });
-  if (STATE.historyLogs.length > 200) STATE.historyLogs.shift();
-
+  if (STATE.historyLogs.length > 300) STATE.historyLogs.shift();
   updateTrendChart();
 }
 
+// ──────────────────────────────────────────────
 // Overview tab rendering
+// ──────────────────────────────────────────────
 function renderOverview(sites) {
   const grid = $('sitesGrid');
   const empty = document.getElementById('overviewEmpty');
   if (empty) empty.remove();
-
   grid.querySelectorAll('.site-card').forEach(c => c.remove());
 
   sites.forEach((s, i) => {
@@ -462,9 +497,9 @@ function renderOverview(sites) {
     const pm10 = parseFloat(s.PM10 ?? 0);
     const co2 = parseFloat(s.CO2 ?? 0);
     const isOn = (s.Status || '').toLowerCase().includes('online') || (s.Status || '').toLowerCase().includes('ok');
-
-    const { label: pm25Lbl, pillClass } = pm25Level(pm25);
-    const isOff = !isOn;
+    const { label: pm25Lbl, pillClass } = pm25Pill(pm25);
+    const pm25C = getLevel('pm25', pm25).color;
+    const co2C = getLevel('co2', co2).color;
 
     const card = document.createElement('div');
     card.className = 'site-card';
@@ -472,15 +507,15 @@ function renderOverview(sites) {
     card.innerHTML = `
       <div class="site-card-header">
         <div class="site-name">${s.SiteName || 'Site ' + s.Site}</div>
-        <div class="site-status-pill ${isOff ? 'pill-off' : pillClass}">${isOff ? 'Offline' : pm25Lbl}</div>
+        <div class="site-status-pill ${!isOn ? 'pill-off' : pillClass}">${!isOn ? 'Offline' : pm25Lbl}</div>
       </div>
       <div class="site-stats">
         <div class="stat-item">
-          <div class="stat-val" style="color:${pm25Color(pm25)}">${pm25.toFixed(1)}</div>
+          <div class="stat-val" style="color:${pm25C}">${pm25.toFixed(1)}</div>
           <div class="stat-label">PM2.5</div>
         </div>
         <div class="stat-item">
-          <div class="stat-val" style="color:${co2Color(co2)}">${co2.toFixed(0)}</div>
+          <div class="stat-val" style="color:${co2C}">${co2.toFixed(0)}</div>
           <div class="stat-label">CO2</div>
         </div>
         <div class="stat-item">
@@ -492,7 +527,6 @@ function renderOverview(sites) {
     `;
     grid.appendChild(card);
   });
-
   renderTable(sites);
 }
 
@@ -509,14 +543,26 @@ function renderTable(sites) {
     tr.innerHTML = `
       <td><strong>${s.SiteName || 'Site ' + s.Site}</strong></td>
       <td><span class="site-status-pill ${isOn ? 'pill-ok' : 'pill-off'}">${s.Status}</span></td>
-      <td style="color:${pm25Color(pm25)}">${pm25.toFixed(1)}</td>
+      <td style="color:${getLevel('pm25', pm25).color}">${pm25.toFixed(1)}</td>
       <td>${parseFloat(s.PM10 ?? 0).toFixed(1)}</td>
-      <td style="color:${co2Color(co2)}">${parseFloat(co2).toFixed(0)}</td>
+      <td style="color:${getLevel('co2', co2).color}">${parseFloat(co2).toFixed(0)}</td>
       <td>${s.RSSI} dBm</td>
       <td style="font-size:0.8rem;color:var(--text-muted)">${s.Update}</td>
     `;
     tbody.appendChild(tr);
   });
+}
+
+// ──────────────────────────────────────────────
+// Metric display (unified setMetric replaces setMetric + setMetricRaw)
+// ──────────────────────────────────────────────
+function setMetric(key, valStr, barPct, label, cls, color) {
+  const valEl = $(`val-${key}`);
+  if (valEl) valEl.textContent = valStr;
+  const bar = $(`bar-${key}`);
+  if (bar) { bar.style.width = clamp(barPct, 0, 100) + '%'; bar.style.background = color; }
+  const statusEl = $(`status-${key}`);
+  if (statusEl) { statusEl.textContent = '● ' + label; statusEl.className = `metric-status ${cls}`; }
 }
 
 // Site 4 detail tab rendering
@@ -529,105 +575,154 @@ function renderSiteDetail(data) {
   const evoc = parseFloat(data.evoc ?? 0);
   const rssi = parseFloat(data.RSSI ?? data.rssi ?? -70);
 
-  setMetric('pm25', pm25.toFixed(1), pm25 / 75 * 100, ...pm25LevelFull(pm25));
-  setMetric('pm10', pm10.toFixed(1), pm10 / 150 * 100, ...pm10LevelFull(pm10));
-  setMetric('co2', co2.toFixed(0), co2 / 1500 * 100, ...co2LevelFull(co2));
+  // PM2.5, PM10, CO2 via config-driven getLevel
+  const pm25L = getLevel('pm25', pm25);
+  setMetric('pm25', pm25.toFixed(1), pm25 / 75 * 100, pm25L.label, pm25L.cls, pm25L.color);
+  const pm10L = getLevel('pm10', pm10);
+  setMetric('pm10', pm10.toFixed(1), pm10 / 150 * 100, pm10L.label, pm10L.cls, pm10L.color);
+  const co2L = getLevel('co2', co2);
+  setMetric('co2', co2.toFixed(0), co2 / 1500 * 100, co2L.label, co2L.cls, co2L.color);
 
+  // Temp
   const tempPct = clamp((temp - 16) / (40 - 16) * 100, 0, 100);
-  setMetricRaw('temp', temp.toFixed(1), tempPct, temp < 26 ? 'เย็นสบาย' : temp < 30 ? 'อุ่น' : 'ร้อน', temp < 26 ? 'good' : temp < 30 ? 'warn' : 'bad', '#C36D4B');
+  setMetric('temp', temp.toFixed(1), tempPct, temp < 26 ? 'เย็นสบาย' : temp < 30 ? 'อุ่น' : 'ร้อน', temp < 26 ? 'good' : temp < 30 ? 'warn' : 'bad', '#C36D4B');
 
+  // Humidity
   const humidPct = clamp(humid, 0, 100);
   const humidStatus = humid < 40 ? 'แห้งเกิน' : humid <= 60 ? 'เหมาะสม' : 'ชื้นเกิน';
   const humidCls = humid < 40 ? 'warn' : humid <= 60 ? 'good' : 'warn';
-  setMetricRaw('humid', humid.toFixed(1), humidPct, humidStatus, humidCls, '#0284C7');
+  setMetric('humid', humid.toFixed(1), humidPct, humidStatus, humidCls, '#0284C7');
 
+  // eVOC
   const evocPct = clamp((evoc / 50) * 100, 0, 100);
   const evocStatus = evoc <= 10 ? 'ดีเยี่ยม' : evoc <= 50 ? 'ปานกลาง' : 'สูง';
   const evocCls = evoc <= 10 ? 'good' : evoc <= 50 ? 'warn' : 'bad';
   const evocColor = evoc <= 10 ? '#0D9488' : evoc <= 50 ? '#0284C7' : '#C36D4B';
-  setMetricRaw('evoc', evoc.toFixed(0), evocPct, evocStatus, evocCls, evocColor);
+  setMetric('evoc', evoc.toFixed(0), evocPct, evocStatus, evocCls, evocColor);
 
+  // RSSI
   const rssiNorm = clamp(((rssi + 100) / 60) * 100, 0, 100);
   const rssiStatus = rssi >= -60 ? 'สัญญาณดีมาก' : rssi >= -70 ? 'ดี' : rssi >= -80 ? 'พอใช้' : 'อ่อน';
   const rssiCls = rssi >= -60 ? 'good' : rssi >= -70 ? 'info' : 'warn';
-  setMetricRaw('rssi', rssi.toFixed(0), rssiNorm, rssiStatus, rssiCls, '#737877');
+  setMetric('rssi', rssi.toFixed(0), rssiNorm, rssiStatus, rssiCls, '#737877');
 
   renderControlCards(pm25, co2, temp, humid, pm10, evoc);
   refreshGauges(pm25, co2, temp);
+  checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc);
 }
 
-function setMetric(key, valStr, barPct, label, cls, color, barColor) {
-  const valEl = $(`val-${key}`);
-  if (valEl) valEl.textContent = valStr;
-  const bar = $(`bar-${key}`);
-  if (bar) {
-    bar.style.width = clamp(barPct, 0, 100) + '%';
-    if (barColor) bar.style.background = barColor;
-    else bar.style.background = color;
+// ──────────────────────────────────────────────
+// Audio Alert Player (Web Audio API Synthesizer)
+// ──────────────────────────────────────────────
+function playAlertSound() {
+  if (!STATE.soundAlertEnabled) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(587.33, ctx.currentTime + 0.25);
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.25);
+  } catch (e) { console.warn('[AudioAlert]', e); }
+}
+
+function toggleSoundAlert() {
+  STATE.soundAlertEnabled = !STATE.soundAlertEnabled;
+  const icon = $('soundAlertIcon'), txt = $('soundAlertText'), btn = $('soundAlertToggleBtn');
+  if (STATE.soundAlertEnabled) {
+    if (icon) icon.textContent = '🔔';
+    if (txt) txt.textContent = 'ระบบแจ้งเตือน: เปิด';
+    if (btn) btn.classList.remove('muted');
+    showToast('🔔 เปิดระบบแจ้งเตือนและ Pop-Up เรียบร้อยแล้ว', 'info');
+  } else {
+    if (icon) icon.textContent = '🔕';
+    if (txt) txt.textContent = 'ระบบแจ้งเตือน: ปิด';
+    if (btn) btn.classList.add('muted');
+    showToast('🔕 ปิดระบบแจ้งเตือนและ Pop-Up แล้ว', 'info');
   }
-  const statusEl = $(`status-${key}`);
-  if (statusEl) {
-    statusEl.textContent = '● ' + label;
-    statusEl.className = `metric-status ${cls}`;
+}
+
+function dismissAlertBanner() {
+  const banner = $('alertBannerWrap');
+  if (banner) { banner.setAttribute('hidden', 'true'); banner.style.display = 'none'; }
+}
+
+function closeAlertModal() {
+  const modal = $('alertModalOverlay');
+  if (modal) { modal.setAttribute('hidden', 'true'); modal.style.display = 'none'; }
+}
+
+// Test trigger for Emergency Alert Pop-Up Modal
+function testAlertModal() {
+  checkAirQualityAlerts(48.5, 112.0, 1250, 31.5, 74.0, 65, true);
+  showToast('🧪 แสดงผล Pop-Up แจ้งเตือนฉุกเฉินระดับอันตราย (Test Mode)', 'info', 3500);
+}
+
+// ──────────────────────────────────────────────
+// Air Quality Threshold Alerts Check (data-driven)
+// ──────────────────────────────────────────────
+function checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc, isTest = false) {
+  if (!STATE.soundAlertEnabled && !isTest) { dismissAlertBanner(); closeAlertModal(); return; }
+
+  const values = { pm25, pm10, co2, temp, humid, evoc };
+  const alerts = [], alertDetails = [], alertCards = {};
+
+  ALERT_DEFS.forEach(def => {
+    const v = values[def.key];
+    const threshold = CONFIG.thresholds[def.key];
+    alertCards[def.key] = false;
+    if (v > threshold) {
+      const valStr = def.format ? def.format(v) : `${v.toFixed(def.decimals)} ${def.unit}`;
+      const limitStr = def.limitFmt ? def.limitFmt(threshold) : `> ${threshold}`;
+      alerts.push(`${def.shortName} สูง (${valStr})`);
+      alertDetails.push({ name: `${def.icon} ${def.name}`, val: valStr, limit: limitStr });
+      alertCards[def.key] = true;
+    }
+  });
+
+  // Toggle pulsing animation on metric cards
+  ['pm25', 'pm10', 'co2', 'temp', 'humid', 'evoc'].forEach(k => {
+    const card = $(`mc-${k}`);
+    if (card) card.classList.toggle('card-alert-pulse', !!alertCards[k]);
+  });
+
+  const banner = $('alertBannerWrap'), bannerText = $('alertBannerText');
+  const modal = $('alertModalOverlay'), modalList = $('alertModalList');
+
+  if (alerts.length > 0) {
+    if (bannerText) bannerText.innerHTML = `ตรวจพบ <strong>${alerts.length} ดัชนี</strong> เกินเกณฑ์มาตรฐานความปลอดภัย: <strong>${alerts.join(' • ')}</strong>`;
+    if (banner) { banner.removeAttribute('hidden'); banner.style.display = 'flex'; }
+
+    if (modalList) {
+      modalList.innerHTML = alertDetails.map(item => `
+        <div class="alert-modal-item">
+          <span>${item.name}</span>
+          <span class="alert-modal-item-val">${item.val} <small style="font-weight:400;opacity:0.75">(เกณฑ์ ${item.limit})</small></span>
+        </div>
+      `).join('');
+    }
+    if (modal) { modal.removeAttribute('hidden'); modal.style.display = 'flex'; }
+    showToast(`⚠️ เตือนภัย! ตรวจพบค่าคุณภาพอากาศเกินมาตรฐาน (${alerts.length} รายการ)`, 'error', 4500);
+    playAlertSound();
+  } else {
+    if (banner) dismissAlertBanner();
+    if (!isTest && modal) closeAlertModal();
   }
 }
 
-function setMetricRaw(key, valStr, barPct, label, cls, barColor) {
-  const valEl = $(`val-${key}`);
-  if (valEl) valEl.textContent = valStr;
-  const bar = $(`bar-${key}`);
-  if (bar) {
-    bar.style.width = clamp(barPct, 0, 100) + '%';
-    bar.style.background = barColor;
-  }
-  const statusEl = $(`status-${key}`);
-  if (statusEl) {
-    statusEl.textContent = '● ' + label;
-    statusEl.className = `metric-status ${cls}`;
-  }
-}
-
-// Air quality thresholds and colors
-function pm25LevelFull(v) {
-  if (v <= 12) return ['ดีเยี่ยม', 'good', '#0D9488', '#0D9488'];
-  if (v <= 35) return ['ปานกลาง', 'warn', '#0284C7', '#0284C7'];
-  return ['อันตราย', 'bad', '#C36D4B', '#C36D4B'];
-}
-function pm10LevelFull(v) {
-  if (v <= 50) return ['ดีเยี่ยม', 'good', '#0D9488', '#0D9488'];
-  if (v <= 100) return ['ปานกลาง', 'warn', '#0284C7', '#0284C7'];
-  return ['อันตราย', 'bad', '#C36D4B', '#C36D4B'];
-}
-function co2LevelFull(v) {
-  if (v < 800) return ['สะอาด', 'good', '#0D9488', '#0D9488'];
-  if (v < 1000) return ['เพิ่มขึ้น', 'warn', '#0284C7', '#0284C7'];
-  return ['อับชื้น', 'bad', '#C36D4B', '#C36D4B'];
-}
-
-function pm25Level(v) {
-  if (v <= 12) return { label: 'ดีเยี่ยม', pillClass: 'pill-ok' };
-  if (v <= 35) return { label: 'ปานกลาง', pillClass: 'pill-warn' };
-  return { label: 'อันตราย', pillClass: 'pill-bad' };
-}
-function pm25Color(v) {
-  if (v <= 12) return '#0D9488';
-  if (v <= 35) return '#0284C7';
-  return '#C36D4B';
-}
-function co2Color(v) {
-  if (v < 800) return '#0D9488';
-  if (v < 1000) return '#0284C7';
-  return '#C36D4B';
-}
-
-// AI Smart HVAC Automation Engine (Trained Multi-Variable Inference Model)
+// ──────────────────────────────────────────────
+// AI Smart HVAC Automation Engine
+// ──────────────────────────────────────────────
 function runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc) {
-  pm25 = parseFloat(pm25 || 0);
-  pm10 = parseFloat(pm10 || 0);
-  co2 = parseFloat(co2 || 0);
-  temp = parseFloat(temp || 0);
-  humid = parseFloat(humid || 0);
-  evoc = parseFloat(evoc || 0);
+  pm25 = parseFloat(pm25 || 0); pm10 = parseFloat(pm10 || 0);
+  co2 = parseFloat(co2 || 0); temp = parseFloat(temp || 0);
+  humid = parseFloat(humid || 0); evoc = parseFloat(evoc || 0);
 
   // 1. Calculate Comprehensive AI IAQ Health Index Score (0 - 100%)
   const pm25Penalty = clamp((pm25 / 50) * 35, 0, 35);
@@ -635,169 +730,263 @@ function runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc) {
   const evocPenalty = clamp((evoc / 50) * 15, 0, 15);
   const tempPenalty = (temp < 20 || temp > 28) ? clamp(Math.abs(temp - 24) * 2, 0, 10) : 0;
   const humidPenalty = (humid < 40 || humid > 65) ? clamp(Math.abs(humid - 50) * 0.3, 0, 15) : 0;
-
   const iaqScore = Math.max(10, Math.round(100 - (pm25Penalty + co2Penalty + evocPenalty + tempPenalty + humidPenalty)));
 
   // 2. Perceived Temperature & Thermal Comfort (Steadman Heat Index Model)
   let perceivedTemp = temp;
-  if (temp >= 24 && humid > 55) {
-    perceivedTemp = temp + 0.1 * (humid - 55);
-  } else if (temp < 22 && humid < 40) {
-    perceivedTemp = temp - 0.08 * (40 - humid);
-  }
+  if (temp >= 24 && humid > 55) perceivedTemp = temp + 0.1 * (humid - 55);
+  else if (temp < 22 && humid < 40) perceivedTemp = temp - 0.08 * (40 - humid);
   perceivedTemp = parseFloat(perceivedTemp.toFixed(1));
 
   // 3. Air Purifier AI Decision
-  let purifierState, purifierBadge, purifierDetails, purifierPillClass;
-  if (pm25 > 35 || pm10 > 75 || evoc > 40) {
-    purifierState = '🔴 เปิดเร่งด่วน (Boost Mode 85-100%)';
-    purifierBadge = 'High Boost';
-    purifierPillClass = 'pill-bad';
-    purifierDetails = `HEPA + Carbon Filter Active • ตรวจพบฝุ่น/EVOC สูง (PM2.5: ${pm25.toFixed(1)}, EVOC: ${evoc.toFixed(0)} ppb)`;
-  } else if (pm25 > 12 || pm10 > 35 || evoc > 15) {
-    purifierState = '🟡 เปิดทำงานแบบสมดุล (Eco Auto 45%)';
-    purifierBadge = 'Eco Auto';
-    purifierPillClass = 'pill-warn';
-    purifierDetails = `HEPA Filter Active • ควบคุมค่าฝุ่นระดับปานกลาง (จำกัดค่าฝุ่น PM2.5 ≤ 12 µg/m³)`;
-  } else {
-    purifierState = '🟢 สแตนบายด์ (Standby 15%)';
-    purifierBadge = 'Standby';
-    purifierPillClass = 'pill-ok';
-    purifierDetails = `อากาศในห้องสะอาดบริสุทธิ์ (Air Cleanliness Index: ${iaqScore}%) • หมุนเวียนลมเบาเพื่อประหยัดไฟ`;
-  }
+  const purifier = (pm25 > 35 || pm10 > 75 || evoc > 40)
+    ? {
+      state: '🔴 เปิดเร่งด่วน (Boost Mode 85-100%)', badge: 'High Boost', pillClass: 'pill-bad',
+      details: `HEPA + Carbon Filter Active • ตรวจพบฝุ่น/EVOC สูง (PM2.5: ${pm25.toFixed(1)}, EVOC: ${evoc.toFixed(0)} ppb)`
+    }
+    : (pm25 > 12 || pm10 > 35 || evoc > 15)
+      ? {
+        state: '🟡 เปิดทำงานแบบสมดุล (Eco Auto 45%)', badge: 'Eco Auto', pillClass: 'pill-warn',
+        details: `HEPA Filter Active • ควบคุมค่าฝุ่นระดับปานกลาง (จำกัดค่าฝุ่น PM2.5 ≤ 12 µg/m³)`
+      }
+      : {
+        state: '🟢 สแตนบายด์ (Standby 15%)', badge: 'Standby', pillClass: 'pill-ok',
+        details: `อากาศในห้องสะอาดบริสุทธิ์ (Air Cleanliness Index: ${iaqScore}%) • หมุนเวียนลมเบาเพื่อประหยัดไฟ`
+      };
 
   // 4. Ventilation System AI Decision
-  let ventState, ventBadge, ventDetails, ventPillClass;
-  if (co2 > 1000) {
-    ventState = '🔴 เปิดระบายอากาศเต็มกำลัง (Fresh Air Valve 100%)';
-    ventBadge = 'Max Exchange';
-    ventPillClass = 'pill-bad';
-    ventDetails = `Air Exchange Rate 3.8 ACH • ตรวจพบ CO2 สูงสะสม (${co2.toFixed(0)} ppm) • เร่งดึงอากาศสดนอกอาคาร`;
-  } else if (co2 > 750) {
-    ventState = '🟡 เปิดระบายอากาศแบบปรับแปร (Fresh Air 50-65%)';
-    ventBadge = 'Auto Exchange';
-    ventPillClass = 'pill-warn';
-    ventDetails = `Air Exchange Rate 2.1 ACH • ควบคุมระดับ CO2 ให้อยู่ในสภาวะสมดุลสำหรับห้องเรียน (<800 ppm)`;
-  } else {
-    ventState = '🟢 เปิดระบายอากาศขั้นต่ำ (Minimum Fresh Air 20%)';
-    ventBadge = 'Min Exchange';
-    ventPillClass = 'pill-ok';
-    ventDetails = `ระดับ CO2 เหมาะสมดีเยี่ยม (${co2.toFixed(0)} ppm) • หมุนเวียนอากาศเพื่อรักษาสมดุลความเย็น`;
-  }
+  const ventilation = (co2 > 1000)
+    ? {
+      state: '🔴 เปิดระบายอากาศเต็มกำลัง (Fresh Air Valve 100%)', badge: 'Max Exchange', pillClass: 'pill-bad',
+      details: `Air Exchange Rate 3.8 ACH • ตรวจพบ CO2 สูงสะสม (${co2.toFixed(0)} ppm) • เร่งดึงอากาศสดนอกอาคาร`
+    }
+    : (co2 > 750)
+      ? {
+        state: '🟡 เปิดระบายอากาศแบบปรับแปร (Fresh Air 50-65%)', badge: 'Auto Exchange', pillClass: 'pill-warn',
+        details: `Air Exchange Rate 2.1 ACH • ควบคุมระดับ CO2 ให้อยู่ในสภาวะสมดุลสำหรับห้องประชุม (<800 ppm)`
+      }
+      : {
+        state: '🟢 เปิดระบายอากาศขั้นต่ำ (Minimum Fresh Air 20%)', badge: 'Min Exchange', pillClass: 'pill-ok',
+        details: `ระดับ CO2 เหมาะสมดีเยี่ยม (${co2.toFixed(0)} ppm) • หมุนเวียนอากาศเพื่อรักษาสมดุลความเย็น`
+      };
 
   // 5. Air Conditioning AI Decision
-  let acState, acBadge, acDetails, acPillClass;
-  if (temp > 29 || perceivedTemp > 30) {
-    acState = `🔴 เปิดทำความเย็นหนัก (Cool Mode 23.0°C • High Fan)`;
-    acBadge = 'Cool High';
-    acPillClass = 'pill-bad';
-    acDetails = `อุณหภูมิห้อง ${temp.toFixed(1)}°C (รู้สึกจริง ${perceivedTemp.toFixed(1)}°C) • เร่งปรับลดอุณหภูมิทางความร้อน`;
-  } else if (temp > 26 || perceivedTemp > 26.5) {
-    acState = `🟡 เปิดทำความเย็นปกติ (Cool Mode 25.0°C • Auto Fan)`;
-    acBadge = 'Cool Auto';
-    acPillClass = 'pill-warn';
-    acDetails = `อุณหภูมิอุ่นเล็กน้อย (${temp.toFixed(1)}°C) • ควบคุมความสบายทางความร้อน (PMV Index: Thermal Balanced)`;
-  } else {
-    acState = `🟢 ปรับโหมดประหยัดพลังงาน (Eco Mode 25.5°C)`;
-    acBadge = 'Eco Saving';
-    acPillClass = 'pill-ok';
-    acDetails = `อุณหภูมิเย็นสบายเหมาะสม (${temp.toFixed(1)}°C) • ประหยัดพลังงานไฟเบอร์สูงสุด 88%`;
-  }
+  const ac = (temp > 29 || perceivedTemp > 30)
+    ? {
+      state: `🔴 เปิดทำความเย็นหนัก (Cool Mode 23.0°C • High Fan)`, badge: 'Cool High', pillClass: 'pill-bad',
+      details: `อุณหภูมิห้อง ${temp.toFixed(1)}°C (รู้สึกจริง ${perceivedTemp.toFixed(1)}°C) • เร่งปรับลดอุณหภูมิทางความร้อน`
+    }
+    : (temp > 26 || perceivedTemp > 26.5)
+      ? {
+        state: `🟡 เปิดทำความเย็นปกติ (Cool Mode 25.0°C • Auto Fan)`, badge: 'Cool Auto', pillClass: 'pill-warn',
+        details: `อุณหภูมิอุ่นเล็กน้อย (${temp.toFixed(1)}°C) • ควบคุมความสบายทางความร้อน (PMV Index: Thermal Balanced)`
+      }
+      : {
+        state: `🟢 ปรับโหมดประหยัดพลังงาน (Eco Mode 25.5°C)`, badge: 'Eco Saving', pillClass: 'pill-ok',
+        details: `อุณหภูมิเย็นสบายเหมาะสม (${temp.toFixed(1)}°C) • ประหยัดพลังงานไฟเบอร์สูงสุด 88%`
+      };
 
   // 6. Humidity Control AI Decision
-  let humidState, humidBadge, humidDetails, humidPillClass;
-  if (humid > 65) {
-    humidState = `🔴 Dehumidifier Active (High Boost 80%)`;
-    humidBadge = 'Dry Boost';
-    humidPillClass = 'pill-bad';
-    humidDetails = `ความชื้นสัมพัทธ์สูง (${humid.toFixed(1)}%RH) • เร่งดึงความชื้นออกจากห้อง ป้องกันเชื้อราและไวรัส`;
-  } else if (humid > 58) {
-    humidState = `🟡 Dehumidifier Active (Low Auto 40%)`;
-    humidBadge = 'Dry Auto';
-    humidPillClass = 'pill-warn';
-    humidDetails = `ความชื้นสะสม (${humid.toFixed(1)}%RH) • รักษาระดับความชื้นสัมพัทธ์ในสภาวะน่าสบาย (45-55%RH)`;
-  } else if (humid < 38) {
-    humidState = `🟡 Humidifier Active (Moisture Boost 50%)`;
-    humidBadge = 'Humidify';
-    humidPillClass = 'pill-warn';
-    humidDetails = `อากาศแห้งเกินไป (${humid.toFixed(1)}%RH) • เพิ่มความชื้นสัมพัทธ์เพื่อป้องกันการระคายเคือง`;
-  } else {
-    humidState = `🟢 ปิด / สแตนบายด์ (Humidity Balanced)`;
-    humidBadge = 'Balanced';
-    humidPillClass = 'pill-ok';
-    humidDetails = `ความชื้นสัมพัทธ์ในห้องอยู่ในเกณฑ์สมบูรณ์แบบ (${humid.toFixed(1)}%RH)`;
-  }
+  const humidity = (humid > 65)
+    ? {
+      state: `🔴 Dehumidifier Active (High Boost 80%)`, badge: 'Dry Boost', pillClass: 'pill-bad',
+      details: `ความชื้นสัมพัทธ์สูง (${humid.toFixed(1)}%RH) • เร่งดึงความชื้นออกจากห้อง ป้องกันเชื้อราและไวรัส`
+    }
+    : (humid > 58)
+      ? {
+        state: `🟡 Dehumidifier Active (Low Auto 40%)`, badge: 'Dry Auto', pillClass: 'pill-warn',
+        details: `ความชื้นสะสม (${humid.toFixed(1)}%RH) • รักษาระดับความชื้นสัมพัทธ์ในสภาวะน่าสบาย (45-55%RH)`
+      }
+      : (humid < 38)
+        ? {
+          state: `🟡 Humidifier Active (Moisture Boost 50%)`, badge: 'Humidify', pillClass: 'pill-warn',
+          details: `อากาศแห้งเกินไป (${humid.toFixed(1)}%RH) • เพิ่มความชื้นสัมพัทธ์เพื่อป้องกันการระคายเคือง`
+        }
+        : {
+          state: `🟢 ปิด / สแตนบายด์ (Humidity Balanced)`, badge: 'Balanced', pillClass: 'pill-ok',
+          details: `ความชื้นสัมพัทธ์ในห้องอยู่ในเกณฑ์สมบูรณ์แบบ (${humid.toFixed(1)}%RH)`
+        };
 
   // 7. AI Predictive Summary Insight
-  let aiInsight;
-  if (iaqScore >= 85) {
-    aiInsight = `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศในห้อง ICT401 อยู่ในเกณฑ์ประเสริฐสุด (IAQ Score: <strong>${iaqScore}/100</strong>) โมเดล AIIR-IAQNet แนะนำให้รักษาระดับการทำงานของ HVAC ในโหมด Eco เพื่อประหยัดพลังงานไฟเบอร์สูงสุด`;
-  } else if (iaqScore >= 65) {
-    aiInsight = `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศอยู่ในระดับปานกลาง (IAQ Score: <strong>${iaqScore}/100</strong>) ตรวจพบค่า CO2 และความชื้นสะสมย่อย โมเดลสั่งเปิดระบบระบายอากาศ 60% ร่วมกับลดความชื้นอัตโนมัติ คาดการณ์คุณภาพอากาศกลับสู่ระดับดีเยี่ยมใน ~10 นาที`;
-  } else {
-    aiInsight = `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศต้องการการฟื้นฟูเร่งด่วน (IAQ Score: <strong>${iaqScore}/100</strong>) ตรวจพบฝุ่นหรือก๊าซสะสมสูง โมเดลสั่งเปิดระบบฟอกอากาศและระบายอากาศแบบ Full Boost อากาศจะกลับสู่เกณฑ์ปกติใน ~18 นาที`;
-  }
+  const aiInsight = iaqScore >= 85
+    ? `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศในห้อง ICT401 อยู่ในเกณฑ์ประเสริฐสุด (IAQ Score: <strong>${iaqScore}/100</strong>) โมเดล AIR-IAQNet แนะนำให้รักษาระดับการทำงานของ HVAC ในโหมด Eco เพื่อประหยัดพลังงานไฟเบอร์สูงสุด`
+    : iaqScore >= 65
+      ? `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศอยู่ในระดับปานกลาง (IAQ Score: <strong>${iaqScore}/100</strong>) ตรวจพบค่า CO2 และความชื้นสะสมย่อย โมเดลสั่งเปิดระบบระบายอากาศ 60% ร่วมกับลดความชื้นอัตโนมัติ คาดการณ์คุณภาพอากาศกลับสู่ระดับดีเยี่ยมใน ~10 นาที`
+      : `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศต้องการการฟื้นฟูเร่งด่วน (IAQ Score: <strong>${iaqScore}/100</strong>) ตรวจพบฝุ่นหรือก๊าซสะสมสูง โมเดลสั่งเปิดระบบฟอกอากาศและระบายอากาศแบบ Full Boost อากาศจะกลับสู่เกณฑ์ปกติใน ~18 นาที`;
 
-  return {
-    iaqScore,
-    perceivedTemp,
-    purifier: { state: purifierState, badge: purifierBadge, details: purifierDetails, pillClass: purifierPillClass },
-    ventilation: { state: ventState, badge: ventBadge, details: ventDetails, pillClass: ventPillClass },
-    ac: { state: acState, badge: acBadge, details: acDetails, pillClass: acPillClass },
-    humidity: { state: humidState, badge: humidBadge, details: humidDetails, pillClass: humidPillClass },
-    insight: aiInsight,
-  };
+  return { iaqScore, perceivedTemp, purifier, ventilation, ac, humidity, insight: aiInsight };
 }
 
-// Control recommendations logic (Executes AI Model Inference)
+// ──────────────────────────────────────────────
+// Control recommendations (loop-driven DOM update)
+// ──────────────────────────────────────────────
 function renderControlCards(pm25, co2, temp, humid, pm10 = 0, evoc = 0) {
-  const modelResult = runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc);
+  const m = runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc);
 
-  // Update AI IAQ Score Badge
   const scoreEl = $('aiScoreVal');
-  if (scoreEl) scoreEl.textContent = `${modelResult.iaqScore}/100`;
+  if (scoreEl) scoreEl.textContent = `${m.iaqScore}/100`;
 
-  // Update Air Purifier
-  const purifier = modelResult.purifier;
-  if ($('cmd-purifier')) $('cmd-purifier').textContent = purifier.state;
-  if ($('badge-purifier')) {
-    $('badge-purifier').textContent = purifier.badge;
-    $('badge-purifier').className = `ai-badge ${purifier.pillClass}`;
+  const floatScoreEl = $('aiFloatingScore');
+  if (floatScoreEl) {
+    floatScoreEl.textContent = `${m.iaqScore}/100`;
+    floatScoreEl.style.color = m.iaqScore >= 85 ? '#0D9488' : (m.iaqScore >= 65 ? '#D97706' : '#EF4444');
   }
-  if ($('detail-purifier')) $('detail-purifier').textContent = purifier.details;
 
-  // Update Ventilation
-  const vent = modelResult.ventilation;
-  if ($('cmd-ventilation')) $('cmd-ventilation').textContent = vent.state;
-  if ($('badge-ventilation')) {
-    $('badge-ventilation').textContent = vent.badge;
-    $('badge-ventilation').className = `ai-badge ${vent.pillClass}`;
-  }
-  if ($('detail-ventilation')) $('detail-ventilation').textContent = vent.details;
+  // Loop-driven update for 4 control cards (replaces 4 duplicate blocks)
+  ['purifier', 'ventilation', 'ac', 'humidity'].forEach(key => {
+    const r = m[key];
+    const cmd = $(`cmd-${key}`), badge = $(`badge-${key}`), detail = $(`detail-${key}`);
+    if (cmd) cmd.textContent = r.state;
+    if (badge) { badge.textContent = r.badge; badge.className = `ai-badge ${r.pillClass}`; }
+    if (detail) detail.textContent = r.details;
+  });
 
-  // Update Air Conditioning
-  const ac = modelResult.ac;
-  if ($('cmd-ac')) $('cmd-ac').textContent = ac.state;
-  if ($('badge-ac')) {
-    $('badge-ac').textContent = ac.badge;
-    $('badge-ac').className = `ai-badge ${ac.pillClass}`;
-  }
-  if ($('detail-ac')) $('detail-ac').textContent = ac.details;
-
-  // Update Humidity Control
-  const humidRes = modelResult.humidity;
-  if ($('cmd-humidity')) $('cmd-humidity').textContent = humidRes.state;
-  if ($('badge-humidity')) {
-    $('badge-humidity').textContent = humidRes.badge;
-    $('badge-humidity').className = `ai-badge ${humidRes.pillClass}`;
-  }
-  if ($('detail-humidity')) $('detail-humidity').textContent = humidRes.details;
-
-  // Update AI Natural Language Insight
-  if ($('aiInsightBox')) $('aiInsightBox').innerHTML = modelResult.insight;
+  if ($('aiInsightBox')) $('aiInsightBox').innerHTML = m.insight;
 }
 
+// ──────────────────────────────────────────────
+// AI Floating Draggable Widget & Modal Controller
+// ──────────────────────────────────────────────
+let aiWidgetInitialized = false;
+
+function openAIModal() {
+  const modal = $('aiModalOverlay');
+  if (modal) modal.classList.add('open');
+}
+
+function closeAIModal() {
+  const modal = $('aiModalOverlay');
+  if (modal) modal.classList.remove('open');
+}
+
+function handleAIModalBackdrop(e) {
+  if (e.target && e.target.id === 'aiModalOverlay') {
+    closeAIModal();
+  }
+}
+
+function initAIFloatingWidget() {
+  const btn = $('aiFloatingBtn');
+  if (!btn || aiWidgetInitialized) return;
+  aiWidgetInitialized = true;
+
+  let isDragging = false;
+  let hasMoved = false;
+  let startX = 0, startY = 0;
+  let origX = 0, origY = 0;
+  const DRAG_THRESHOLD = 6; // px
+
+  function clampAndSetPos(x, y) {
+    const btnRect = btn.getBoundingClientRect();
+    const w = btnRect.width > 0 ? btnRect.width : 140;
+    const h = btnRect.height > 0 ? btnRect.height : 54;
+    const maxX = Math.max(10, window.innerWidth - w - 10);
+    const maxY = Math.max(10, window.innerHeight - h - 10);
+    const clampedX = clamp(x, 10, maxX);
+    const clampedY = clamp(y, 10, maxY);
+
+    btn.style.left = `${clampedX}px`;
+    btn.style.top = `${clampedY}px`;
+    btn.style.right = 'auto';
+    btn.style.bottom = 'auto';
+    return { x: clampedX, y: clampedY };
+  }
+
+  // Restore saved position if available
+  try {
+    const saved = localStorage.getItem('ai_widget_pos');
+    if (saved) {
+      const pos = JSON.parse(saved);
+      if (typeof pos.x === 'number' && typeof pos.y === 'number') {
+        clampAndSetPos(pos.x, pos.y);
+      }
+    }
+  } catch (e) { console.warn('[AI Widget Pos Restore]', e); }
+
+  function onPointerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return; // Only main button
+
+    isDragging = true;
+    hasMoved = false;
+
+    const clientX = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const clientY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+    startX = clientX;
+    startY = clientY;
+
+    const rect = btn.getBoundingClientRect();
+    origX = rect.left;
+    origY = rect.top;
+
+    btn.classList.add('dragging');
+
+    window.addEventListener('mousemove', onPointerMove, { passive: false });
+    window.addEventListener('mouseup', onPointerUp);
+    window.addEventListener('touchmove', onPointerMove, { passive: false });
+    window.addEventListener('touchend', onPointerUp);
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    const clientX = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const clientY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+
+    if (!hasMoved && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+      hasMoved = true;
+    }
+
+    if (hasMoved) {
+      if (e.cancelable) e.preventDefault();
+      clampAndSetPos(origX + dx, origY + dy);
+    }
+  }
+
+  function onPointerUp(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    btn.classList.remove('dragging');
+
+    window.removeEventListener('mousemove', onPointerMove);
+    window.removeEventListener('mouseup', onPointerUp);
+    window.removeEventListener('touchmove', onPointerMove);
+    window.removeEventListener('touchend', onPointerUp);
+
+    if (hasMoved) {
+      const rect = btn.getBoundingClientRect();
+      const pos = clampAndSetPos(rect.left, rect.top);
+      try {
+        localStorage.setItem('ai_widget_pos', JSON.stringify(pos));
+      } catch (err) {}
+    } else {
+      // It was a click!
+      openAIModal();
+    }
+  }
+
+  btn.addEventListener('mousedown', onPointerDown);
+  btn.addEventListener('touchstart', onPointerDown, { passive: true });
+
+  // Escape key closes modal
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAIModal();
+  });
+
+  // Reposition within window on resize
+  window.addEventListener('resize', debounce(() => {
+    if (btn.style.left && btn.style.top) {
+      const rect = btn.getBoundingClientRect();
+      clampAndSetPos(rect.left, rect.top);
+    }
+  }, 150));
+}
+
+// ──────────────────────────────────────────────
 // Semi-circle gauge charts
+// ──────────────────────────────────────────────
 function drawGauge(canvasId, value, max, ranges, unit) {
   const canvas = $(canvasId);
   if (!canvas) return;
@@ -806,13 +995,10 @@ function drawGauge(canvasId, value, max, ranges, unit) {
   const isLight = theme === 'light';
 
   let color = '#0D9488';
-  for (const r of ranges) {
-    if (value >= r.min && value <= r.max) { color = r.color; break; }
-  }
+  for (const r of ranges) { if (value >= r.min && value <= r.max) { color = r.color; break; } }
 
   const pct = clamp(value / max, 0, 1);
   const dpr = window.devicePixelRatio || 1;
-
   const rect = canvas.getBoundingClientRect();
   const W = rect.width > 0 ? rect.width : 260;
   const H = rect.height > 0 ? rect.height : 180;
@@ -839,8 +1025,7 @@ function drawGauge(canvasId, value, max, ranges, unit) {
 
   // Active filled arc with ambient glow
   if (pct > 0) {
-    const startAngle = Math.PI;
-    const endAngle = Math.PI + pct * Math.PI;
+    const startAngle = Math.PI, endAngle = Math.PI + pct * Math.PI;
     ctx.beginPath();
     ctx.arc(cxr, cyr, ro, startAngle, endAngle);
     ctx.arc(cxr, cyr, ri, endAngle, startAngle, true);
@@ -905,39 +1090,25 @@ function refreshGauges(pm25, co2, temp) {
   drawGauge('gauge-co2', co2 || 0, 1500, CO2_RANGES, 'ppm');
   drawGauge('gauge-temp', temp || 0, 45, TEMP_RANGES, '°C');
 }
-
-let _resizeTimer;
-window.addEventListener('resize', () => {
-  clearTimeout(_resizeTimer);
-  _resizeTimer = setTimeout(() => {
-    if (STATE.site4Data) refreshGauges();
-  }, 200);
-});
-
-// Historical trend line chart
+// ──────────────────────────────────────────────
+// Historical trend line chart (Local Session Synchronized)
+// ──────────────────────────────────────────────
 function updateTrendChart() {
   const ctx = $('trendChart');
   if (!ctx) return;
 
-  const textColor = '#475569';
-  const gridColor = 'rgba(0,0,0,0.06)';
-
+  const textColor = '#475569', gridColor = 'rgba(0,0,0,0.06)';
   const now = Date.now();
   let logs = [...STATE.historyLogs];
-  if (STATE.timeFilter === '30m') {
-    const cutoff = now - 30 * 60 * 1000;
-    logs = logs.filter(l => l.timestamp >= cutoff);
-  } else if (STATE.timeFilter === '1h') {
-    const cutoff = now - 60 * 60 * 1000;
-    logs = logs.filter(l => l.timestamp >= cutoff);
-  }
-  if (logs.length === 0 && STATE.historyLogs.length > 0) {
-    logs = STATE.historyLogs.slice(-15);
-  }
 
-  const labels   = logs.map(l => l.label || (l.time ? (l.time.split(' ')[1] || l.time) : ''));
+  if (STATE.timeFilter === '15m') logs = logs.filter(l => l.timestamp >= now - 15 * 60 * 1000);
+  else if (STATE.timeFilter === '30m') logs = logs.filter(l => l.timestamp >= now - 30 * 60 * 1000);
+  else if (STATE.timeFilter === '1h') logs = logs.filter(l => l.timestamp >= now - 60 * 60 * 1000);
+  // 'all' displays everything collected in current login session
+
+  const labels = logs.map(l => l.label);
   const pm25Data = logs.map(l => l.pm25);
-  const co2Data  = logs.map(l => l.co2);
+  const co2Data = logs.map(l => l.co2);
   const tempData = logs.map(l => l.temp);
 
   if (STATE.trendChart) {
@@ -945,51 +1116,30 @@ function updateTrendChart() {
     STATE.trendChart.data.datasets[0].data = pm25Data;
     STATE.trendChart.data.datasets[1].data = co2Data;
     STATE.trendChart.data.datasets[2].data = tempData;
-    STATE.trendChart.update('active');
+    STATE.trendChart.update();
     return;
   }
+
+  const mkDataset = (label, data, color, yAxisID, fill) => ({
+    label, data, yAxisID,
+    borderColor: color,
+    backgroundColor: color === '#0D9488' ? 'rgba(13,148,136,0.12)' : (color === '#0284C7' ? 'rgba(2,132,199,0.12)' : 'rgba(217,119,6,0.12)'),
+    borderWidth: 2.5,
+    pointRadius: 4.5,
+    pointHoverRadius: 7,
+    pointBackgroundColor: color,
+    fill,
+    tension: 0.35,
+  });
 
   STATE.trendChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: labels,
+      labels,
       datasets: [
-        {
-          label: 'PM2.5 (µg/m³)',
-          data: pm25Data,
-          yAxisID: 'y',
-          borderColor: '#0D9488',
-          backgroundColor: 'rgba(13,148,136,0.12)',
-          borderWidth: 2.5,
-          pointRadius: 3.5,
-          pointHoverRadius: 6,
-          fill: true,
-          tension: 0.38,
-        },
-        {
-          label: 'CO2 (ppm)',
-          data: co2Data,
-          yAxisID: 'yCO2',
-          borderColor: '#0284C7',
-          backgroundColor: 'rgba(2,132,199,0.08)',
-          borderWidth: 2.5,
-          pointRadius: 3.5,
-          pointHoverRadius: 6,
-          fill: true,
-          tension: 0.38,
-        },
-        {
-          label: 'อุณหภูมิ (°C)',
-          data: tempData,
-          yAxisID: 'y',
-          borderColor: '#D97706',
-          backgroundColor: 'rgba(217,119,6,0.08)',
-          borderWidth: 2.5,
-          pointRadius: 3.5,
-          pointHoverRadius: 6,
-          fill: false,
-          tension: 0.38,
-        },
+        mkDataset('PM2.5 (µg/m³)', pm25Data, '#0D9488', 'y', true),
+        { ...mkDataset('CO2 (ppm)', co2Data, '#0284C7', 'yCO2', true), backgroundColor: 'rgba(2,132,199,0.08)' },
+        { ...mkDataset('อุณหภูมิ (°C)', tempData, '#D97706', 'y', false), backgroundColor: 'rgba(217,119,6,0.08)' },
       ],
     },
     options: {
@@ -997,71 +1147,42 @@ function updateTrendChart() {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: {
-          labels: {
-            color: textColor,
-            font: { family: 'Inter', size: 12, weight: '600' },
-            boxWidth: 14,
-            usePointStyle: true,
-          },
-        },
+        legend: { labels: { color: textColor, font: { family: 'Inter', size: 12, weight: '600' }, boxWidth: 14, usePointStyle: true } },
         tooltip: {
-          backgroundColor: 'rgba(15,23,42,0.92)',
-          titleColor: '#FFFFFF',
-          bodyColor: '#E2E8F0',
-          borderColor: 'rgba(13,148,136,0.4)',
-          borderWidth: 1,
-          padding: 12,
-          cornerRadius: 10,
-          bodyFont: { family: 'Inter' },
-          titleFont: { family: 'Inter', weight: '600' },
+          backgroundColor: 'rgba(15,23,42,0.92)', titleColor: '#FFFFFF', bodyColor: '#E2E8F0',
+          borderColor: 'rgba(13,148,136,0.4)', borderWidth: 1, padding: 12, cornerRadius: 10,
+          bodyFont: { family: 'Inter' }, titleFont: { family: 'Inter', weight: '600' },
         },
       },
       scales: {
-        x: {
-          ticks: { color: textColor, font: { size: 11, family: 'Inter' } },
-          grid: { color: gridColor },
-        },
+        x: { ticks: { color: textColor, font: { size: 11, family: 'Inter' } }, grid: { color: gridColor } },
         y: {
-          type: 'linear',
-          display: true,
-          position: 'left',
+          type: 'linear', display: true, position: 'left', beginAtZero: true,
           title: { display: true, text: 'PM2.5 (µg/m³) / อุณหภูมิ (°C)', color: textColor, font: { size: 11, family: 'Inter', weight: '600' } },
-          ticks: { color: textColor, font: { size: 11, family: 'Inter' } },
-          grid: { color: gridColor },
-          beginAtZero: true,
+          ticks: { color: textColor, font: { size: 11, family: 'Inter' } }, grid: { color: gridColor },
         },
         yCO2: {
-          type: 'linear',
-          display: true,
-          position: 'right',
+          type: 'linear', display: true, position: 'right', beginAtZero: false,
           title: { display: true, text: 'CO2 (ppm)', color: '#0284C7', font: { size: 11, family: 'Inter', weight: '600' } },
-          ticks: { color: '#0284C7', font: { size: 11, family: 'Inter' } },
-          grid: { drawOnChartArea: false },
-          beginAtZero: false,
+          ticks: { color: '#0284C7', font: { size: 11, family: 'Inter' } }, grid: { drawOnChartArea: false },
         },
       },
     },
   });
 }
 
+// ──────────────────────────────────────────────
 // Export data to CSV
+// ──────────────────────────────────────────────
 function downloadCSV() {
-  if (!STATE.historyLogs.length && !STATE.site4Data) {
-    showToast('ไม่มีข้อมูลสำหรับดาวน์โหลด', 'error');
-    return;
-  }
+  if (!STATE.historyLogs.length && !STATE.site4Data) { showToast('ไม่มีข้อมูลสำหรับดาวน์โหลด', 'error'); return; }
+
   const headers = ['เวลาอัปเดต', 'ห้อง/สถานที่', 'PM2.5 (µg/m³)', 'PM10 (µg/m³)', 'CO2 (ppm)', 'อุณหภูมิ (°C)', 'ความชื้น (%RH)', 'EVOC (ppb)', 'RSSI (dBm)'];
+  const d = STATE.site4Data;
   const logs = STATE.historyLogs.length > 0 ? STATE.historyLogs : [{
-    time: STATE.site4Data ? (STATE.site4Data.lastUpdate || nowStr()) : nowStr(),
-    site: 'Site 4 - ICT401',
-    pm25: STATE.site4Data ? STATE.site4Data['PM2.5'] : 0,
-    pm10: STATE.site4Data ? STATE.site4Data['PM10'] : 0,
-    co2: STATE.site4Data ? STATE.site4Data.CO2 : 0,
-    temp: STATE.site4Data ? STATE.site4Data.temp : 0,
-    humid: STATE.site4Data ? STATE.site4Data.humid : 0,
-    evoc: STATE.site4Data ? STATE.site4Data.evoc : 0,
-    rssi: STATE.site4Data ? STATE.site4Data.RSSI : '0',
+    time: d ? (d.lastUpdate || nowStr()) : nowStr(), site: 'Site 4 - ICT401',
+    pm25: d ? d['PM2.5'] : 0, pm10: d ? d['PM10'] : 0, co2: d ? d.CO2 : 0,
+    temp: d ? d.temp : 0, humid: d ? d.humid : 0, evoc: d ? d.evoc : 0, rssi: d ? d.RSSI : '0',
   }];
 
   const rows = logs.map(l =>
@@ -1074,21 +1195,16 @@ function downloadCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `AIIR_ICT401_${nowStr().replace(/[/:]/g, '-')}.csv`;
+  a.download = `AIR_ICT401_${nowStr().replace(/[/:]/g, '-')}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   showToast('✅ ดาวน์โหลด CSV ข้อมูลห้อง ICT401 สำเร็จ', 'success');
 }
 
-// Initializer
+// ──────────────────────────────────────────────
+// Initializer (single resize listener with debounce)
+// ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   checkAuthOnStartup();
-
-  let resizeTimer;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      if (STATE.site4Data) refreshGauges();
-    }, 150);
-  });
+  window.addEventListener('resize', debounce(() => { if (STATE.site4Data) refreshGauges(); }, 200));
 });
