@@ -37,7 +37,7 @@ const STATE = {
   historyLabels: [],
   autoRefreshTimer: null,
   trendChart: null,
-  gaugeCharts: { pm25: null, co2: null, temp: null },
+  gaugeCharts: { pm10: null, co2: null, temp: null, humid: null },
   soundAlertEnabled: true,
 };
 
@@ -80,20 +80,35 @@ function showToast(msg, type = 'info', duration = 3500) {
 // Metric level definitions (replaces 7 separate functions)
 // ──────────────────────────────────────────────
 const METRIC_DEFS = {
-  pm25: [
-    { max: 12, label: 'ดีเยี่ยม', cls: 'good', color: '#0D9488', pill: 'pill-ok' },
-    { max: 35, label: 'ปานกลาง', cls: 'warn', color: '#0284C7', pill: 'pill-warn' },
-    { max: Infinity, label: 'อันตราย', cls: 'bad', color: '#C36D4B', pill: 'pill-bad' },
-  ],
   pm10: [
-    { max: 50, label: 'ดีเยี่ยม', cls: 'good', color: '#0D9488' },
-    { max: 100, label: 'ปานกลาง', cls: 'warn', color: '#0284C7' },
-    { max: Infinity, label: 'อันตราย', cls: 'bad', color: '#C36D4B' },
+    { max: 50, label: 'ดีเยี่ยม', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 100, label: 'ปานกลาง', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'อันตราย', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
   ],
   co2: [
-    { max: 800, label: 'สะอาด', cls: 'good', color: '#0D9488' },
-    { max: 1000, label: 'เพิ่มขึ้น', cls: 'warn', color: '#0284C7' },
-    { max: Infinity, label: 'อับชื้น', cls: 'bad', color: '#C36D4B' },
+    { max: 800, label: 'สะอาด', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 1000, label: 'ปานกลาง', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'อับชื้น', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+  temp: [
+    { max: 26, label: 'เย็นสบาย', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 30, label: 'อุ่น', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'ร้อน', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+  humid: [
+    { max: 40, label: 'แห้งเกิน', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: 60, label: 'เหมาะสม', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: Infinity, label: 'ชื้นเกิน', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+  pm25: [
+    { max: 12, label: 'ดีเยี่ยม', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 35, label: 'ปานกลาง', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'อันตราย', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+  evoc: [
+    { max: 10, label: 'ดีเยี่ยม', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 50, label: 'ปานกลาง', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'สูง', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
   ],
 };
 
@@ -575,39 +590,37 @@ function renderSiteDetail(data) {
   const evoc = parseFloat(data.evoc ?? 0);
   const rssi = parseFloat(data.RSSI ?? data.rssi ?? -70);
 
-  // PM2.5, PM10, CO2 via config-driven getLevel
-  const pm25L = getLevel('pm25', pm25);
-  setMetric('pm25', pm25.toFixed(1), pm25 / 75 * 100, pm25L.label, pm25L.cls, pm25L.color);
+  // Top 4 Hero Metrics (PM10, CO2, Temp, Humid)
   const pm10L = getLevel('pm10', pm10);
-  setMetric('pm10', pm10.toFixed(1), pm10 / 150 * 100, pm10L.label, pm10L.cls, pm10L.color);
+  setMetric('pm10', pm10.toFixed(1), (pm10 / 150) * 100, pm10L.label, pm10L.cls, pm10L.color);
+
   const co2L = getLevel('co2', co2);
-  setMetric('co2', co2.toFixed(0), co2 / 1500 * 100, co2L.label, co2L.cls, co2L.color);
+  setMetric('co2', co2.toFixed(0), (co2 / 1500) * 100, co2L.label, co2L.cls, co2L.color);
 
-  // Temp
-  const tempPct = clamp((temp - 16) / (40 - 16) * 100, 0, 100);
-  setMetric('temp', temp.toFixed(1), tempPct, temp < 26 ? 'เย็นสบาย' : temp < 30 ? 'อุ่น' : 'ร้อน', temp < 26 ? 'good' : temp < 30 ? 'warn' : 'bad', '#C36D4B');
+  const tempL = getLevel('temp', temp);
+  const tempPct = clamp(((temp - 16) / (40 - 16)) * 100, 0, 100);
+  setMetric('temp', temp.toFixed(1), tempPct, tempL.label, tempL.cls, tempL.color);
 
-  // Humidity
+  const humidL = getLevel('humid', humid);
   const humidPct = clamp(humid, 0, 100);
-  const humidStatus = humid < 40 ? 'แห้งเกิน' : humid <= 60 ? 'เหมาะสม' : 'ชื้นเกิน';
-  const humidCls = humid < 40 ? 'warn' : humid <= 60 ? 'good' : 'warn';
-  setMetric('humid', humid.toFixed(1), humidPct, humidStatus, humidCls, '#0284C7');
+  setMetric('humid', humid.toFixed(1), humidPct, humidL.label, humidL.cls, humidL.color);
 
-  // eVOC
+  // Secondary Metrics (PM2.5, EVOC, RSSI)
+  const pm25L = getLevel('pm25', pm25);
+  setMetric('pm25', pm25.toFixed(1), (pm25 / 75) * 100, pm25L.label, pm25L.cls, pm25L.color);
+
+  const evocL = getLevel('evoc', evoc);
   const evocPct = clamp((evoc / 50) * 100, 0, 100);
-  const evocStatus = evoc <= 10 ? 'ดีเยี่ยม' : evoc <= 50 ? 'ปานกลาง' : 'สูง';
-  const evocCls = evoc <= 10 ? 'good' : evoc <= 50 ? 'warn' : 'bad';
-  const evocColor = evoc <= 10 ? '#0D9488' : evoc <= 50 ? '#0284C7' : '#C36D4B';
-  setMetric('evoc', evoc.toFixed(0), evocPct, evocStatus, evocCls, evocColor);
+  setMetric('evoc', evoc.toFixed(0), evocPct, evocL.label, evocL.cls, evocL.color);
 
-  // RSSI
   const rssiNorm = clamp(((rssi + 100) / 60) * 100, 0, 100);
-  const rssiStatus = rssi >= -60 ? 'สัญญาณดีมาก' : rssi >= -70 ? 'ดี' : rssi >= -80 ? 'พอใช้' : 'อ่อน';
-  const rssiCls = rssi >= -60 ? 'good' : rssi >= -70 ? 'info' : 'warn';
-  setMetric('rssi', rssi.toFixed(0), rssiNorm, rssiStatus, rssiCls, '#737877');
+  const rssiStatus = rssi >= -65 ? 'ดีเยี่ยม' : rssi >= -75 ? 'ดี' : rssi >= -85 ? 'พอใช้' : 'อ่อน';
+  const rssiCls = rssi >= -75 ? 'good' : rssi >= -85 ? 'warn' : 'bad';
+  const rssiColor = rssi >= -75 ? '#10B981' : rssi >= -85 ? '#F59E0B' : '#EF4444';
+  setMetric('rssi', rssi.toFixed(0), rssiNorm, rssiStatus, rssiCls, rssiColor);
 
   renderControlCards(pm25, co2, temp, humid, pm10, evoc);
-  refreshGauges(pm25, co2, temp);
+  refreshGauges(pm10, co2, temp, humid);
   checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc);
 }
 
@@ -1064,31 +1077,38 @@ function drawGauge(canvasId, value, max, ranges, unit) {
   ctx.fillText(max, cxr + ro - 4, cyr + 6);
 }
 
-const PM25_RANGES = [
-  { min: 0, max: 12, color: '#0D9488' },
-  { min: 12, max: 35, color: '#0284C7' },
-  { min: 35, max: 9999, color: '#C36D4B' },
+const PM10_RANGES = [
+  { min: 0, max: 50, color: '#10B981' },
+  { min: 50, max: 100, color: '#F59E0B' },
+  { min: 100, max: 9999, color: '#EF4444' },
 ];
 const CO2_RANGES = [
-  { min: 0, max: 800, color: '#0D9488' },
-  { min: 800, max: 1000, color: '#0284C7' },
-  { min: 1000, max: 9999, color: '#C36D4B' },
+  { min: 0, max: 800, color: '#10B981' },
+  { min: 800, max: 1000, color: '#F59E0B' },
+  { min: 1000, max: 9999, color: '#EF4444' },
 ];
 const TEMP_RANGES = [
-  { min: 0, max: 26, color: '#0D9488' },
-  { min: 26, max: 30, color: '#0284C7' },
-  { min: 30, max: 9999, color: '#C36D4B' },
+  { min: 0, max: 26, color: '#10B981' },
+  { min: 26, max: 30, color: '#F59E0B' },
+  { min: 30, max: 9999, color: '#EF4444' },
+];
+const HUMID_RANGES = [
+  { min: 0, max: 40, color: '#F59E0B' },
+  { min: 40, max: 60, color: '#10B981' },
+  { min: 60, max: 9999, color: '#EF4444' },
 ];
 
-function refreshGauges(pm25, co2, temp) {
-  if (pm25 === undefined && STATE.site4Data) {
-    pm25 = parseFloat(STATE.site4Data['PM2.5'] ?? 0);
+function refreshGauges(pm10, co2, temp, humid) {
+  if (pm10 === undefined && STATE.site4Data) {
+    pm10 = parseFloat(STATE.site4Data['PM10'] ?? STATE.site4Data.pm10 ?? 0);
     co2 = parseFloat(STATE.site4Data.CO2 ?? 0);
     temp = parseFloat(STATE.site4Data.temp ?? 0);
+    humid = parseFloat(STATE.site4Data.humid ?? 0);
   }
-  drawGauge('gauge-pm25', pm25 || 0, 75, PM25_RANGES, 'µg/m³');
+  drawGauge('gauge-pm10', pm10 || 0, 150, PM10_RANGES, 'µg/m³');
   drawGauge('gauge-co2', co2 || 0, 1500, CO2_RANGES, 'ppm');
   drawGauge('gauge-temp', temp || 0, 45, TEMP_RANGES, '°C');
+  drawGauge('gauge-humid', humid || 0, 100, HUMID_RANGES, '%RH');
 }
 // ──────────────────────────────────────────────
 // Historical trend line chart (Local Session Synchronized)
