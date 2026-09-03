@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // ---- Session & Cookie Settings ----
 session_start();
-$cookieFile = sys_get_temp_dir() . '/aiir_cookie_' . session_id() . '.txt';
+$cookieFile = sys_get_temp_dir() . '/aiir_master_cookie.txt';
 
 // ---- Base Configuration ----
 define('AIIR_BASE', 'https://emtrontech.com/AIIR/');
@@ -413,6 +413,23 @@ function getSiteData(): void {
     echo json_encode($response);
 }
 
+function ensureAiirAuthenticated(): void {
+    // 1. Visit login.php to obtain initial session cookie
+    makeCurl(AIIR_BASE . 'login.php', [], [
+        'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    ]);
+    usleep(100000);
+
+    // 2. Authenticate with master credentials
+    $uHash = hash('sha256', 'admin');
+    $pHash = hash('sha256', 'password');
+    makeCurl(AIIR_BASE . 'userAuthen.php', ['u' => $uHash, 'p' => $pHash, 'd' => '0'], [
+        'Referer: ' . AIIR_BASE . 'login.php',
+        'X-Requested-With: XMLHttpRequest',
+    ]);
+    usleep(150000);
+}
+
 function getSpecData(): void {
     $siteId   = $_GET['site'] ?? $_POST['site'] ?? '4';
     $siteType = $_GET['siteType'] ?? $_POST['siteType'] ?? $siteId;
@@ -422,7 +439,7 @@ function getSpecData(): void {
         'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     ]);
 
-    usleep(200000); // 200ms delay
+    usleep(150000); // 150ms delay
 
     $apiUrl = AIIR_BASE . 'getSpecSiteData.php?_t=' . time();
     $r = makeCurl($apiUrl, ['site' => $siteId, 'siteType' => $siteType, '_t' => time()], [
@@ -432,6 +449,24 @@ function getSpecData(): void {
 
     $text = trim($r['body'] ?? '');
     $j = @json_decode($text, true);
+
+    // If emtrontech session expired or returned 302/HTML, auto-authenticate and retry!
+    if (!is_array($j)) {
+        ensureAiirAuthenticated();
+
+        makeCurl($pageUrl, [], [
+            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        ]);
+        usleep(150000);
+
+        $r = makeCurl($apiUrl, ['site' => $siteId, 'siteType' => $siteType, '_t' => time()], [
+            'Referer: ' . $pageUrl,
+            'X-Requested-With: XMLHttpRequest',
+        ]);
+
+        $text = trim($r['body'] ?? '');
+        $j = @json_decode($text, true);
+    }
 
     if (is_array($j)) {
         $d = isset($j['d']) && is_array($j['d']) ? $j['d'] : $j;
