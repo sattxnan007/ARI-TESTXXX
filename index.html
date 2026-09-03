@@ -14,7 +14,2077 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
     rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="css/style.css?v=3.0" />
+  <style>
+/* AIIR IAQ Smart Dashboard – style.css */
+
+/* ---- Google Font ---- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ---- CSS Variables (DEFAULT LIGHT MODE: Clean White & Off-White) ---- */
+:root, :root[data-theme="light"] {
+  /* Palette Tokens */
+  --primary:           #0D9488;
+  --primary-hover:     #0F766E;
+  --primary-light:     #2DD4BF;
+  --primary-bg:        rgba(13, 148, 136, 0.1);
+
+  --secondary:         #0284C7;
+  --secondary-hover:   #0369A1;
+  --secondary-light:   #38BDF8;
+  --secondary-bg:      rgba(2, 132, 199, 0.1);
+
+  --tertiary:          #C36D4B;
+  --tertiary-hover:    #A85536;
+  --tertiary-light:    #E08E6D;
+  --tertiary-bg:       rgba(195, 109, 75, 0.1);
+
+  --neutral:           #737877;
+  --neutral-dark:      #1D2628;
+  --neutral-light:     #F8FAFC;
+  --neutral-bg:        rgba(115, 120, 119, 0.1);
+
+  /* Status Colors */
+  --green:             #0D9488;
+  --yellow:            #0284C7;
+  --orange:            #C36D4B;
+  --red:               #C36D4B;
+  --blue:              #0284C7;
+  --cyan:              #0D9488;
+
+  /* Theme Accents */
+  --accent:            #0D9488;
+  --accent-light:      #0F766E;
+  --accent-blue:       #0284C7;
+
+  /* Light Theme Surface & Text */
+  --bg-gradient:       linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 50%, #E2E8F0 100%);
+  --sidebar-bg:        #FFFFFF;
+  --text:              #0F172A;
+  --text-muted:        #475569;
+  --text-dim:          #94A3B8;
+  --border:            #E2E8F0;
+  --border-hover:      #0D9488;
+  --glass-bg:          #FFFFFF;
+  --glass-blur:        blur(16px);
+  --card-bg:           #FFFFFF;
+  --input-bg:          #F1F5F9;
+  --shadow-sm:         0 4px 16px rgba(15, 23, 42, 0.05);
+  --shadow-md:         0 10px 28px rgba(15, 23, 42, 0.08);
+
+  --sidebar-w:         260px;
+  --radius:            16px;
+  --radius-sm:         10px;
+  --transition:        0.28s cubic-bezier(.4,0,.2,1);
+}
+
+/* ---- DARK THEME OPTION ---- */
+:root[data-theme="dark"] {
+  /* Dark Theme Surfaces & Text */
+  --bg-gradient:       linear-gradient(135deg, #091312 0%, #0F201D 50%, #152B27 100%);
+  --sidebar-bg:        rgba(13, 27, 25, 0.96);
+  --text:              #F1F5F9;
+  --text-muted:        rgba(241, 245, 249, 0.7);
+  --text-dim:          rgba(241, 245, 249, 0.4);
+  --border:            rgba(13, 148, 136, 0.22);
+  --border-hover:      rgba(13, 148, 136, 0.55);
+  --glass-bg:          rgba(20, 40, 37, 0.75);
+  --card-bg:           rgba(20, 40, 37, 0.75);
+  --input-bg:          rgba(14, 28, 26, 0.9);
+  --shadow-sm:         0 4px 16px rgba(0, 0, 0, 0.2);
+  --shadow-md:         0 10px 28px rgba(0, 0, 0, 0.3);
+  --accent-light:      #2DD4BF;
+}
+
+/* ---- Global Reset ---- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+[hidden] { display: none !important; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+  min-height: 100vh;
+  color: var(--text);
+  overflow-x: hidden;
+  transition: background var(--transition), color var(--transition);
+}
+
+/* Sidebar */
+.sidebar {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 0 24px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: transform var(--transition), background var(--transition), border-color var(--transition);
+}
+
+/* Sidebar Collapsed State */
+body.sidebar-collapsed .sidebar {
+  transform: translateX(-100%);
+}
+body.sidebar-collapsed .main-content {
+  margin-left: 0;
+}
+
+.sidebar-header {
+  text-align: center;
+  padding: 28px 20px 20px;
+}
+.sidebar-logo {
+  font-size: 2.8rem;
+  margin-bottom: 8px;
+  animation: floatLogo 4s ease-in-out infinite;
+}
+@keyframes floatLogo {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-5px); }
+}
+.sidebar-brand {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: 0.03em;
+}
+.sidebar-sub {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0 16px 16px;
+}
+
+/* Status Badge */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 50px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin: 0 16px 16px;
+  width: calc(100% - 32px);
+  transition: all var(--transition);
+}
+.badge-online {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #10B981;
+}
+.badge-offline {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #EF4444;
+}
+
+/* Pulsing dot */
+.dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-green {
+  background: #10B981;
+  animation: dotPulse 2s ease-in-out infinite;
+}
+.dot-yellow {
+  background: #F59E0B;
+  animation: dotPulse 2s ease-in-out infinite;
+}
+.dot-red {
+  background: #EF4444;
+  animation: none;
+}
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.45; transform: scale(0.75); }
+}
+
+/* ---- CENTERED LOGIN SCREEN ---- */
+.centered-login-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 120px);
+  padding: 24px;
+  animation: fadeInUp 0.5s ease;
+}
+
+.centered-login-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 40px 36px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.09);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all var(--transition);
+}
+
+.centered-login-card:hover {
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.13);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.login-brand-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.login-brand-logo {
+  font-size: 3.2rem;
+  margin-bottom: 10px;
+  animation: floatLogo 4s ease-in-out infinite;
+}
+
+.login-brand-title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+.login-brand-sub {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.login-form-centered {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.btn-login-centered {
+  width: 100%;
+  padding: 12px 20px;
+  background: #10B981;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all var(--transition);
+  margin-top: 6px;
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.25);
+}
+
+.btn-login-centered:hover {
+  background: #059669;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.35);
+}
+
+.centered-badge {
+  margin: 6px 0 0 0;
+  width: auto;
+  padding: 6px 20px;
+}
+
+/* ---- Login Form ---- */
+.login-form {
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+[hidden],
+.hidden,
+.login-form[hidden],
+.user-session-card[hidden],
+.topbar-user-area[hidden] {
+  display: none !important;
+}
+.form-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 2px;
+}
+.form-input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  caret-color: var(--primary);
+}
+.form-input::placeholder { color: var(--text-dim); }
+.form-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.18);
+  background: #FFFFFF;
+}
+
+.pw-wrap { position: relative; }
+.pw-wrap .form-input { padding-right: 44px; }
+.pw-toggle {
+  position: absolute;
+  right: 10px; top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 6px;
+  transition: color var(--transition), background var(--transition);
+}
+.pw-toggle:hover { color: var(--primary); background: var(--primary-bg); }
+
+/* Primary Button (Solid Primary Teal) */
+.btn-login {
+  width: 100%;
+  padding: 11px 16px;
+  background: var(--primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all var(--transition);
+  margin-top: 4px;
+}
+.btn-login:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(13, 148, 136, 0.35);
+}
+.btn-login:active { transform: translateY(0); }
+
+/* ---- Spinner ---- */
+.spinner {
+  width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Toggle ---- */
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  cursor: pointer;
+  gap: 10px;
+}
+.toggle-label {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  flex: 1;
+}
+.toggle-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 50px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.slider::before {
+  content: '';
+  position: absolute;
+  left: 3px; top: 3px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform var(--transition);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+}
+.toggle-switch input:checked + .slider { background: var(--primary); }
+.toggle-switch input:checked + .slider::before { transform: translateX(20px); }
+
+/* ---- Last Update ---- */
+.last-update {
+  padding: 12px 16px 0;
+}
+.last-update-label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 4px;
+}
+.last-update-time {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Close button (mobile) */
+.sidebar-close {
+  display: none;
+  position: absolute;
+  top: 14px; right: 14px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 8px;
+  width: 32px; height: 32px;
+  cursor: pointer;
+  font-size: 1rem;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+.sidebar-close:hover { background: var(--border); color: var(--text); }
+
+/* Overlay */
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 150;
+  backdrop-filter: blur(2px);
+}
+
+/* Main content layout */
+.main-content {
+  margin-left: var(--sidebar-w);
+  min-height: 100vh;
+  padding: 32px 32px 48px;
+  transition: margin-left var(--transition);
+}
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding: 10px 16px;
+  background: var(--glass-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition);
+}
+.topbar-left, .topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.topbar-btn {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  width: 38px; height: 38px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition);
+}
+.topbar-btn:hover {
+  background: var(--primary-bg);
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: scale(1.04);
+}
+.topbar-brand {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 0.03em;
+}
+
+/* User Session Card (Sidebar) */
+.user-session-card {
+  padding: 14px 16px;
+  background: var(--primary-bg);
+  border: 1px solid rgba(13, 148, 136, 0.25);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 16px;
+  animation: fadeInUp 0.3s ease;
+}
+
+.session-user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.session-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.session-user-name {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.session-user-role {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-top: 2px;
+}
+
+.btn-logout {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(195, 109, 75, 0.1);
+  border: 1px solid rgba(195, 109, 75, 0.3);
+  border-radius: 8px;
+  color: var(--tertiary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all var(--transition);
+}
+
+.btn-logout:hover {
+  background: var(--tertiary);
+  color: #ffffff;
+}
+
+/* Top Bar User Area */
+.topbar-user-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-user-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 50px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.user-avatar-icon {
+  font-size: 0.95rem;
+}
+
+.btn-topbar-logout {
+  padding: 6px 14px;
+  background: rgba(195, 109, 75, 0.1);
+  border: 1px solid rgba(195, 109, 75, 0.3);
+  border-radius: 50px;
+  color: var(--tertiary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition);
+}
+
+.btn-topbar-logout:hover {
+  background: var(--tertiary);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+/* Welcome screen */
+.welcome-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 75vh;
+  text-align: center;
+  animation: fadeInUp 0.6s ease;
+}
+.welcome-icon {
+  font-size: 5rem;
+  margin-bottom: 24px;
+  animation: floatLogo 4s ease-in-out infinite;
+}
+.welcome-title {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--primary);
+  margin-bottom: 14px;
+}
+.welcome-sub {
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.7;
+  max-width: 420px;
+  margin-bottom: 32px;
+}
+.welcome-hint {
+  padding: 14px 28px;
+  background: var(--primary-bg);
+  border: 1px solid rgba(13, 148, 136, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  animation: hintPulse 3s ease-in-out infinite;
+}
+@keyframes hintPulse {
+  0%, 100% { border-color: rgba(13, 148, 136, 0.3); }
+  50%       { border-color: rgba(13, 148, 136, 0.7); }
+}
+
+/* Hero header */
+.hero-header {
+  background: var(--glass-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 24px 32px;
+  margin-bottom: 28px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  animation: fadeInUp 0.5s ease;
+}
+.hero-icon { font-size: 2.8rem; flex-shrink: 0; }
+.hero-text { flex: 1; }
+.hero-title {
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.2;
+}
+.hero-subtitle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-top: 5px;
+}
+
+/* Live Update Badge in Hero Header */
+.hero-live-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card-bg);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 8px 18px;
+  border-radius: 30px;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.08);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+.hero-live-badge.updated {
+  border-color: #10B981;
+  background: rgba(16, 185, 129, 0.12);
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.35);
+  transform: scale(1.02);
+}
+.live-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #10B981;
+  flex-shrink: 0;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+}
+.live-pulse-dot.pulsing {
+  animation: livePulse 2s infinite;
+}
+@keyframes livePulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+.live-badge-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.live-badge-status {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #059669;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.live-badge-time {
+  font-size: 0.88rem;
+  color: var(--text);
+  font-weight: 500;
+}
+.live-badge-time strong {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.hero-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.btn-refresh {
+  padding: 9px 20px;
+  background: var(--secondary);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  display: flex; align-items: center; gap: 6px;
+  white-space: nowrap;
+}
+.btn-refresh:hover {
+  background: var(--secondary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.3);
+}
+.btn-refresh.spinning #refreshIcon { animation: spin 0.6s linear infinite; display: inline-block; }
+
+/* Chart Panel & Time Filter Row */
+.chart-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.section-header-no-margin {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.chart-time-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  padding: 4px;
+  border-radius: 50px;
+}
+
+.time-filter-btn {
+  background: none;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 50px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.time-filter-btn:hover {
+  color: var(--text);
+  background: var(--primary-bg);
+}
+
+.time-filter-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.28);
+}
+
+/* Navigation tabs */
+.tabs-container { animation: fadeInUp 0.6s ease 0.1s both; }
+
+.tab-list {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 28px;
+}
+.tab-btn {
+  padding: 11px 22px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 10px 10px 0 0;
+  transition: all var(--transition);
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); background: var(--primary-bg); }
+.tab-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; animation: fadeInUp 0.35s ease; }
+
+/* Section header */
+.section-header {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+/* Glass panel card */
+.glass-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 20px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.glass-panel:hover { border-color: var(--border-hover); box-shadow: var(--shadow-md); }
+
+/* Sites grid (overview tab) */
+.sites-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.site-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  cursor: default;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+  animation: fadeInUp 0.4s ease both;
+}
+.site-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--primary);
+  box-shadow: 0 12px 30px rgba(13, 148, 136, 0.15);
+}
+.site-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.site-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.site-status-pill {
+  padding: 3px 10px;
+  border-radius: 50px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.pill-ok    { background: rgba(16, 185, 129, 0.12); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.35); }
+.pill-warn  { background: rgba(245, 158, 11, 0.12); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.35); }
+.pill-bad   { background: rgba(239, 68, 68, 0.12); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.35); }
+.pill-off   { background: var(--neutral-bg); color: var(--neutral); border: 1px solid var(--border); }
+
+.site-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.stat-item { text-align: center; }
+.stat-val {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+.stat-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.site-update {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-align: right;
+  margin-top: 8px;
+}
+
+.empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+.empty-icon { font-size: 3rem; opacity: 0.5; }
+
+/* Data table */
+.table-wrap { overflow-x: auto; }
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.88rem;
+}
+.data-table th {
+  background: var(--primary-bg);
+  color: var(--primary);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  transition: background var(--transition);
+}
+.data-table tr:hover td { background: var(--primary-bg); }
+.data-table small { color: var(--text-dim); font-size: 0.7em; }
+
+.table-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+.btn-download {
+  padding: 9px 20px;
+  background: var(--tertiary);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.btn-download:hover {
+  background: var(--tertiary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(195, 109, 75, 0.35);
+}
+
+/* Metric Card Sections & Grids */
+.metrics-section-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Hero Gauge Cards Grid (4 Columns) */
+.hero-gauges-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.hero-gauge-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  animation: fadeInUp 0.4s ease both;
+}
+
+.hero-gauge-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+}
+
+.hero-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.hero-card-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hero-card-title {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.hero-card-sub {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.canvas-wrap {
+  width: 100%;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.canvas-wrap canvas {
+  width: 100%;
+  height: 180px;
+  display: block;
+}
+
+/* Telemetry Grid (3 Columns) */
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 26px;
+}
+
+.metric-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+  position: relative;
+  overflow: hidden;
+  animation: fadeInUp 0.4s ease both;
+}
+
+.metric-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+}
+
+.metric-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.metric-icon-box {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.icon-teal   { background: rgba(16, 185, 129, 0.12); color: #10B981; }
+.icon-cyan   { background: rgba(6, 182, 212, 0.12); color: #0891B2; }
+.icon-azure  { background: rgba(2, 132, 199, 0.12); color: #0284C7; }
+.icon-amber  { background: rgba(245, 158, 11, 0.12); color: #F59E0B; }
+.icon-blue   { background: rgba(56, 189, 248, 0.12); color: #0284C7; }
+.icon-emerald{ background: rgba(16, 185, 129, 0.12); color: #10B981; }
+.icon-purple { background: rgba(139, 92, 246, 0.12); color: #7C3AED; }
+
+.metric-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-grow: 1;
+}
+
+.metric-label {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.metric-status {
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 50px;
+  background: var(--input-bg);
+  display: inline-block;
+  white-space: nowrap;
+}
+.metric-status.good  { color: #10B981; background: rgba(16, 185, 129, 0.12); }
+.metric-status.warn  { color: #F59E0B; background: rgba(245, 158, 11, 0.12); }
+.metric-status.bad   { color: #EF4444; background: rgba(239, 68, 68, 0.12); }
+.metric-status.info  { color: #10B981; background: rgba(16, 185, 129, 0.12); }
+
+.metric-value {
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.1;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: baseline;
+}
+
+.metric-unit {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 5px;
+}
+
+.metric-bar-wrap {
+  background: var(--input-bg);
+  border-radius: 100px;
+  height: 5px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.metric-bar {
+  height: 100%;
+  border-radius: 100px;
+  width: 0%;
+  background: var(--primary);
+  transition: width 0.8s cubic-bezier(.4,0,.2,1);
+}
+
+/* ──────────────────────────────────────────────
+   AI Floating Draggable Widget & Modal System
+────────────────────────────────────────────── */
+
+/* Draggable Floating Button */
+.ai-floating-widget {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 9990;
+  display: none; /* Shown dynamically via JS when logged in */
+  align-items: center;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--primary);
+  padding: 8px 16px 8px 10px;
+  border-radius: 50px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), 0 0 15px rgba(13, 148, 136, 0.25);
+  backdrop-filter: blur(16px);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.ai-floating-widget:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.28), 0 0 20px rgba(13, 148, 136, 0.4);
+  border-color: var(--secondary);
+}
+
+.ai-floating-widget.dragging {
+  cursor: grabbing;
+  opacity: 0.92;
+  transform: scale(1.06);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35), 0 0 25px rgba(13, 148, 136, 0.5);
+  transition: none; /* smooth instant drag tracking */
+}
+
+.ai-floating-drag-grip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 4px 2px 2px;
+  opacity: 0.4;
+  cursor: grab;
+}
+
+.ai-floating-drag-grip span {
+  display: block;
+  width: 4px;
+  height: 4px;
+  background: var(--text-dim);
+  border-radius: 50%;
+}
+
+.ai-floating-widget:hover .ai-floating-drag-grip {
+  opacity: 0.8;
+}
+
+.ai-floating-icon-wrap {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(13, 148, 136, 0.2), rgba(2, 132, 199, 0.2));
+  border: 1px solid rgba(13, 148, 136, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+
+.ai-floating-pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+  animation: aiPulseRing 2.4s infinite ease-out;
+  pointer-events: none;
+}
+
+@keyframes aiPulseRing {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  50% { transform: scale(1.25); opacity: 0; }
+  100% { transform: scale(0.9); opacity: 0; }
+}
+
+.ai-floating-text-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ai-floating-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ai-floating-score {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.1;
+}
+
+/* AI Smart Automation Modal Backdrop & Card */
+.ai-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9995;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.ai-modal-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ai-modal-card {
+  width: 100%;
+  max-width: 860px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px 28px;
+  background: var(--card-bg);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+  transform: scale(0.92) translateY(16px);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ai-modal-backdrop.open .ai-modal-card {
+  transform: scale(1) translateY(0);
+}
+
+.ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+
+.ai-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ai-header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ai-brain-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(13, 148, 136, 0.15), rgba(2, 132, 199, 0.15));
+  border: 1px solid rgba(13, 148, 136, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.1);
+  flex-shrink: 0;
+}
+
+.ai-panel-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.ai-panel-sub {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.ai-score-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  background: rgba(13, 148, 136, 0.1);
+  border: 1px solid rgba(13, 148, 136, 0.25);
+  padding: 6px 14px;
+  border-radius: 12px;
+}
+
+.ai-score-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ai-score-val {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.1;
+}
+
+.ai-modal-close-btn {
+  background: rgba(100, 116, 139, 0.12);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), transform var(--transition);
+}
+
+.ai-modal-close-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+  transform: scale(1.05);
+}
+
+/* AI Command Grid (4 Cards) */
+.ai-cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 640px) {
+  .ai-cmd-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ai-cmd-card {
+  background: var(--neutral-light);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+.ai-cmd-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.ai-cmd-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ai-cmd-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-cmd-icon {
+  font-size: 1.2rem;
+}
+
+.ai-cmd-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ai-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 50px;
+}
+
+.ai-cmd-state {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.ai-cmd-details {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* AI Natural Language Insight Banner */
+.ai-insight-box {
+  background: linear-gradient(135deg, rgba(13, 148, 136, 0.08), rgba(2, 132, 199, 0.08));
+  border: 1px solid rgba(13, 148, 136, 0.2);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+
+/* AI Modal Footer */
+.ai-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  gap: 12px;
+}
+
+.ai-modal-hint {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+}
+
+.ai-modal-hint kbd {
+  background: var(--neutral-light);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 0.72rem;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.ai-modal-ack-btn {
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition), transform var(--transition);
+  white-space: nowrap;
+}
+
+.ai-modal-ack-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+/* Trend chart */
+.chart-wrap {
+  position: relative;
+  height: 300px;
+}
+
+/* Toast notification */
+.toast {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  padding: 13px 22px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  z-index: 9999;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+  max-width: 360px;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast.success {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(13, 148, 136, 0.3);
+}
+.toast.error {
+  background: var(--tertiary);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(195, 109, 75, 0.3);
+}
+.toast.info {
+  background: var(--secondary);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(2, 132, 199, 0.3);
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--input-bg); }
+::-webkit-scrollbar-thumb { background: var(--neutral); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+/* Responsive adjustments */
+@media (max-width: 1100px) {
+  .hero-gauges-grid { grid-template-columns: repeat(3, 1fr); }
+  .telemetry-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 868px) {
+  .hero-gauges-grid { grid-template-columns: 1fr; }
+  .telemetry-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(calc(-1 * var(--sidebar-w)));
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-close { display: flex; }
+  .overlay.show { display: block; }
+  .main-content {
+    margin-left: 0;
+    padding: 0 16px 40px;
+  }
+  .topbar { display: flex; }
+  .hero-header {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 20px;
+  }
+  .hero-title { font-size: 1.4rem; }
+  .hero-right { align-self: flex-end; }
+  .ai-cmd-grid { grid-template-columns: 1fr; }
+  .welcome-title { font-size: 1.6rem; }
+}
+
+@media (max-width: 480px) {
+  .telemetry-grid { grid-template-columns: 1fr; }
+  .main-content { padding: 0 12px 40px; }
+  .hero-title { font-size: 1.2rem; }
+}
+
+/* ==========================================================================
+   Real-Time Air Quality Alert Banner & Pulsing Animation
+   ========================================================================== */
+.iaq-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-left: 5px solid #ef4444;
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.18);
+  animation: slideDownAlert 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDownAlert {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.alert-banner-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+  animation: alertIconBounce 1.5s infinite ease-in-out;
+}
+
+@keyframes alertIconBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
+.alert-banner-content {
+  flex: 1;
+}
+
+.alert-banner-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #dc2626;
+  margin-bottom: 4px;
+}
+:root[data-theme="dark"] .alert-banner-title {
+  color: #fca5a5;
+}
+
+.alert-banner-desc {
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--text-main);
+  font-weight: 500;
+}
+
+.alert-banner-dismiss {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.alert-banner-dismiss:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+/* Sound Alert Toggle Button in TopBar (Pill Theme Matching User Pill) */
+.sound-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 50px;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  box-shadow: none;
+  margin: 0 2px 0 0;
+  transition: all var(--transition);
+}
+.sound-toggle-btn:hover {
+  background: var(--primary-bg);
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.15);
+}
+.sound-toggle-btn.muted {
+  background: rgba(115, 120, 119, 0.08);
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+
+/* Test Pop-Up Alert Button */
+.btn-test-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  padding: 6px 14px;
+  border-radius: 50px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: all var(--transition);
+}
+.btn-test-alert:hover {
+  background: #ef4444;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+/* Pulsing highlight for cards exceeding thresholds */
+.card-alert-pulse {
+  border-color: rgba(239, 68, 68, 0.8) !important;
+  animation: cardAlertGlow 1.8s infinite ease-in-out !important;
+}
+
+@keyframes cardAlertGlow {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.3), inset 0 0 8px rgba(239, 68, 68, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(239, 68, 68, 0.6), inset 0 0 16px rgba(239, 68, 68, 0.2);
+  }
+}
+
+/* ==========================================================================
+   Real-Time Emergency Pop-Up Alert Modal
+   ========================================================================== */
+.alert-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeInModal 0.25s ease-out;
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.alert-modal-card {
+  width: 100%;
+  max-width: 500px;
+  background: var(--card-bg);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-top: 6px solid #ef4444;
+  border-radius: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35), 0 0 30px rgba(239, 68, 68, 0.2);
+  overflow: hidden;
+  animation: scalePopModal 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes scalePopModal {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.alert-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.alert-modal-badge {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 4px 12px;
+  border-radius: 50px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.alert-modal-close {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.alert-modal-close:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+.alert-modal-body {
+  padding: 22px;
+  text-align: center;
+}
+
+.alert-modal-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
+  border: 2px solid rgba(239, 68, 68, 0.3);
+  margin-bottom: 14px;
+  animation: pulseIcon 1.5s infinite ease-in-out;
+}
+
+@keyframes pulseIcon {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { transform: scale(1.08); box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+}
+
+.alert-modal-icon {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.alert-modal-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #dc2626;
+  margin-bottom: 6px;
+}
+:root[data-theme="dark"] .alert-modal-title {
+  color: #fca5a5;
+}
+
+.alert-modal-sub {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.alert-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+  text-align: left;
+}
+
+.alert-modal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.alert-modal-item-val {
+  color: #dc2626;
+  font-weight: 800;
+}
+:root[data-theme="dark"] .alert-modal-item-val {
+  color: #f87171;
+}
+
+.alert-modal-action-box {
+  background: var(--primary-bg);
+  border: 1px solid rgba(13, 148, 136, 0.25);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 0.84rem;
+  color: var(--primary);
+  text-align: left;
+  line-height: 1.45;
+}
+
+.alert-modal-footer {
+  padding: 14px 22px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.btn-alert-ack {
+  width: 100%;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.35);
+}
+
+.btn-alert-ack:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(239, 68, 68, 0.45);
+}
+.btn-alert-ack:active {
+  transform: translateY(0);
+}
+
+
+
+  </style>
 </head>
 
 <body>
@@ -46,13 +2116,13 @@
     <label class="toggle-wrap">
       <span class="toggle-label">&#128260; Auto-Refresh (30 วินาที)</span>
       <div class="toggle-switch">
-        <input type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh()" />
+        <input type="checkbox" id="autoRefreshToggle" checked onchange="toggleAutoRefresh()" />
         <span class="slider"></span>
       </div>
     </label>
 
     <!-- Last Update -->
-    <div class="last-update" id="lastUpdateWrap" hidden>
+    <div class="last-update" id="lastUpdateWrap">
       <div class="last-update-label">อัปเดตล่าสุด</div>
       <div class="last-update-time" id="lastUpdateTime">—</div>
     </div>
@@ -150,7 +2220,14 @@
         <div class="hero-icon">🌿</div>
         <div class="hero-text">
           <div class="hero-title">AIR IAQ Smart Dashboard</div>
-          <div class="hero-subtitle">ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB &middot; ห้อง SITE 1 ICT-SERVICEDESK</div>
+          <div class="hero-subtitle">ระบบติดตามคุณภาพอากาศภายในอาคาร ICT BRB &middot; ห้อง SITE 4 ICT401</div>
+        </div>
+        <div class="hero-live-badge" id="heroLiveBadge" title="สถานะการเชื่อมต่อสดและเวลาอัปเดต">
+          <span class="live-pulse-dot pulsing" id="heroPulseDot"></span>
+          <span class="live-badge-text">
+            <span class="live-badge-status" id="heroLiveStatus">LIVE AUTO-REFRESH (30s)</span>
+            <span class="live-badge-time">อัปเดตล่าสุด: <strong id="heroLastUpdateTime">—</strong></span>
+          </span>
         </div>
         <div class="hero-right">
           <button class="btn-download" onclick="downloadCSV()" title="ดาวน์โหลดประวัติข้อมูล CSV">&#11015; ดาวน์โหลด
@@ -462,7 +2539,1328 @@
 
   </main>
 
-  <script src="js/app.js?v=3.0"></script>
+  <script>
+/**
+ * app.js — AIIR IAQ Smart Dashboard
+ * Business logic: API proxy via PHP backend, login, auto-refresh,
+ * metric rendering, gauge charts, trend chart, control recommendations, CSV export.
+ */
+
+'use strict';
+
+// App configuration
+const CONFIG = {
+  loginUrl: 'proxy.php?action=login',
+  specDataUrl: 'proxy.php?action=getSpecData&site=4&siteType=4',
+  demoMode: false,  // false = ใช้ข้อมูลจริงจาก AIIR API ผ่าน proxy.php
+  autoRefreshMs: 30000,
+  trendMaxPoints: 10,
+  thresholds: {
+    pm25: 35.0,   // µg/m³
+    pm10: 100.0,  // µg/m³
+    co2: 1000,    // ppm
+    temp: 30.0,   // °C
+    humid: 70.0,  // %RH
+    evoc: 50.0,   // ppb
+  },
+};
+
+// App state
+const STATE = {
+  isLoggedIn: false,
+  username: '',
+  sessionStartTime: null,
+  timeFilter: 'all',
+  site4Data: null,
+  historyLogs: [],
+  historyPM25: [],
+  historyCO2: [],
+  historyTemp: [],
+  historyLabels: [],
+  autoRefreshTimer: null,
+  trendChart: null,
+  gaugeCharts: { pm10: null, co2: null, temp: null, humid: null },
+  soundAlertEnabled: true,
+};
+
+// ──────────────────────────────────────────────
+// Utility helpers
+// ──────────────────────────────────────────────
+function $(id) { return document.getElementById(id); }
+function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function rand(min, max, decimals = 1) { return parseFloat((Math.random() * (max - min) + min).toFixed(decimals)); }
+
+function debounce(fn, ms) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+function toggleEl(id, show, display = 'flex') {
+  const el = $(id);
+  if (!el) return;
+  el.hidden = !show;
+  el.style.setProperty('display', show ? display : 'none', 'important');
+}
+
+function nowStr() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function showToast(msg, type = 'info', duration = 3500) {
+  const t = $('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = 'toast'; }, duration);
+}
+
+// ──────────────────────────────────────────────
+// Metric level definitions (replaces 7 separate functions)
+// ──────────────────────────────────────────────
+const METRIC_DEFS = {
+  pm10: [
+    { max: 50, label: 'ดีเยี่ยม', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 100, label: 'ปานกลาง', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'อันตราย', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+  co2: [
+    { max: 800, label: 'สะอาด', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 1000, label: 'ปานกลาง', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'อับชื้น', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+  temp: [
+    { max: 26, label: 'เย็นสบาย', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 30, label: 'อุ่น', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'ร้อน', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+  humid: [
+    { max: 40, label: 'แห้งเกิน', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: 60, label: 'เหมาะสม', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: Infinity, label: 'ชื้นเกิน', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+  pm25: [
+    { max: 12, label: 'ดีเยี่ยม', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 35, label: 'ปานกลาง', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'อันตราย', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+  evoc: [
+    { max: 10, label: 'ดีเยี่ยม', cls: 'good', color: '#10B981', pill: 'pill-ok' },
+    { max: 50, label: 'ปานกลาง', cls: 'warn', color: '#F59E0B', pill: 'pill-warn' },
+    { max: Infinity, label: 'สูง', cls: 'bad', color: '#EF4444', pill: 'pill-bad' },
+  ],
+};
+
+function getLevel(key, value) {
+  const defs = METRIC_DEFS[key];
+  if (!defs) return { label: '', cls: '', color: '#888', pill: '' };
+  for (const d of defs) {
+    if (value <= d.max) return d;
+  }
+  return defs[defs.length - 1];
+}
+
+function pm25Pill(v) {
+  const d = getLevel('pm25', v);
+  return { label: d.label, pillClass: d.pill || 'pill-ok' };
+}
+
+// ──────────────────────────────────────────────
+// Alert definitions (replaces 6 if-blocks)
+// ──────────────────────────────────────────────
+const ALERT_DEFS = [
+  { key: 'pm25', icon: '🌫️', name: 'PM2.5 (ฝุ่นละอองขนาดเล็ก)', unit: 'µg/m³', decimals: 1, shortName: 'PM2.5' },
+  { key: 'pm10', icon: '💨', name: 'PM10 (ฝุ่นขนาดกลาง)', unit: 'µg/m³', decimals: 1, shortName: 'PM10' },
+  { key: 'co2', icon: '☁️', name: 'CO2 (คาร์บอนไดออกไซด์)', unit: 'ppm', decimals: 0, shortName: 'CO2' },
+  {
+    key: 'temp', icon: '🌡️', name: 'อุณหภูมิห้อง (Room Temp)', unit: '°C', decimals: 1, shortName: 'อุณหภูมิ',
+    format: v => `${v.toFixed(1)}°C`, limitFmt: t => `> ${t}°C`
+  },
+  {
+    key: 'humid', icon: '💧', name: 'ความชื้นสัมพัทธ์ (Relative Humid)', unit: '%RH', decimals: 1, shortName: 'ความชื้น',
+    format: v => `${v.toFixed(1)} %RH`, limitFmt: t => `> ${t}%`
+  },
+  { key: 'evoc', icon: '🧪', name: 'EVOC (สารระเหยง่าย)', unit: 'ppb', decimals: 0, shortName: 'EVOC' },
+];
+
+// ──────────────────────────────────────────────
+// Sidebar controls
+// ──────────────────────────────────────────────
+function toggleSidebar() {
+  const sb = $('sidebar');
+  const ov = $('overlay');
+  if (sb) sb.classList.toggle('open');
+  if (ov) ov.classList.toggle('show');
+}
+
+function toggleSidebarCollapse() {
+  if (window.innerWidth <= 768) { toggleSidebar(); }
+  else { document.body.classList.toggle('sidebar-collapsed'); }
+  setTimeout(() => { if (STATE.site4Data) refreshGauges(); }, 300);
+}
+
+// Password visibility toggle
+function togglePw() {
+  const inp = $('inputPass');
+  if (!inp) return;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  const toggleBtn = $('pwToggle');
+  if (toggleBtn) toggleBtn.style.opacity = inp.type === 'text' ? '1' : '0.6';
+}
+
+// Navigation tab compatibility placeholder
+function switchTab(name) {
+  if (STATE.site4Data) setTimeout(refreshGauges, 60);
+}
+
+// ──────────────────────────────────────────────
+// Auto refresh handling
+// ──────────────────────────────────────────────
+function toggleAutoRefresh() {
+  const on = $('autoRefreshToggle')?.checked || false;
+  if (on) {
+    if (STATE.isLoggedIn) startAutoRefresh();
+    showToast('🟢 Auto-Refresh เปิดแล้ว (อัปเดตสดทุก 30 วินาที)', 'info');
+  } else {
+    stopAutoRefresh();
+    showToast('⏸️ Auto-Refresh หยุดชั่วคราวแล้ว', 'info');
+  }
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  STATE.autoRefreshTimer = setInterval(fetchData, CONFIG.autoRefreshMs);
+  const dot = $('heroPulseDot');
+  if (dot) dot.className = 'live-pulse-dot pulsing';
+  const status = $('heroLiveStatus');
+  if (status) status.textContent = 'LIVE AUTO-REFRESH (30s)';
+  const toggle = $('autoRefreshToggle');
+  if (toggle) toggle.checked = true;
+}
+
+function stopAutoRefresh() {
+  if (STATE.autoRefreshTimer) {
+    clearInterval(STATE.autoRefreshTimer);
+    STATE.autoRefreshTimer = null;
+  }
+  const dot = $('heroPulseDot');
+  if (dot) dot.className = 'live-pulse-dot';
+  const status = $('heroLiveStatus');
+  if (status) status.textContent = 'PAUSED (หยุดชั่วคราว)';
+  const toggle = $('autoRefreshToggle');
+  if (toggle) toggle.checked = false;
+}
+
+// ──────────────────────────────────────────────
+// Connection status & user display handling
+// ──────────────────────────────────────────────
+function setConnected(on, username = '') {
+  STATE.isLoggedIn = on;
+  const badge = $('statusBadge');
+  const dot = $('statusDot');
+  const text = $('statusText');
+
+  if (on) {
+    STATE.username = username || localStorage.getItem('aiir_user') || STATE.username || 'Admin';
+    if (username) localStorage.setItem('aiir_user', username);
+
+    if (badge) badge.className = 'status-badge badge-online';
+    if (dot) dot.className = 'dot dot-green';
+    if (text) text.textContent = 'Connected';
+
+    const sd = $('sidebarUserDisplay'), td = $('topbarUserDisplay');
+    if (sd) sd.textContent = STATE.username;
+    if (td) td.textContent = STATE.username;
+
+    toggleEl('loginForm', false);
+    toggleEl('userSessionCard', true);
+    toggleEl('topbarUserArea', true);
+
+    // Auto-collapse sidebar on login for full dashboard view
+    document.body.classList.add('sidebar-collapsed');
+    const sb = $('sidebar');
+    if (sb) sb.classList.remove('open');
+
+    // Initialize clean session timeline from login time
+    if (!STATE.sessionStartTime) {
+      STATE.sessionStartTime = Date.now();
+      STATE.historyLogs = [];
+      STATE.historyLabels = [];
+      STATE.historyPM25 = [];
+      STATE.historyCO2 = [];
+      STATE.historyTemp = [];
+      if (STATE.trendChart) {
+        STATE.trendChart.destroy();
+        STATE.trendChart = null;
+      }
+    }
+
+    showDashboard();
+    if ($('autoRefreshToggle')?.checked) {
+      startAutoRefresh();
+    }
+  } else {
+    stopAutoRefresh();
+    STATE.username = '';
+    STATE.sessionStartTime = null;
+    STATE.historyLogs = [];
+    STATE.historyLabels = [];
+    STATE.historyPM25 = [];
+    STATE.historyCO2 = [];
+    STATE.historyTemp = [];
+    if (STATE.trendChart) {
+      STATE.trendChart.destroy();
+      STATE.trendChart = null;
+    }
+    localStorage.removeItem('aiir_user');
+
+    if (badge) badge.className = 'status-badge badge-offline';
+    if (dot) dot.className = 'dot dot-red';
+    if (text) text.textContent = 'Disconnected';
+
+    toggleEl('loginForm', true);
+    toggleEl('userSessionCard', false);
+    toggleEl('topbarUserArea', false);
+
+    document.body.classList.remove('sidebar-collapsed');
+    hideDashboard();
+    stopAutoRefresh();
+  }
+}
+
+// Session Persistence Check on Startup (F5 Refresh)
+async function checkAuthOnStartup() {
+  const savedUser = localStorage.getItem('aiir_user');
+  try {
+    const res = await fetch('proxy.php?action=checkSession');
+    const json = await res.json();
+    if (json.ok && json.loggedIn) {
+      setConnected(true, json.user || savedUser || 'Admin');
+      fetchData();
+      if ($('autoRefreshToggle').checked) startAutoRefresh();
+      return;
+    }
+  } catch (e) { console.warn('[AIIR Session Check]', e); }
+  setConnected(false);
+}
+
+function updateLastUpdate(timeStr) {
+  const t = timeStr || nowStr();
+  const wrap = $('lastUpdateWrap');
+  if (wrap) {
+    wrap.hidden = false;
+    wrap.removeAttribute('hidden');
+    wrap.style.display = 'block';
+  }
+  const el = $('lastUpdateTime');
+  if (el) el.textContent = t;
+
+  const heroTime = $('heroLastUpdateTime');
+  if (heroTime) {
+    heroTime.textContent = t;
+    const badge = $('heroLiveBadge');
+    if (badge) {
+      badge.classList.remove('updated');
+      void badge.offsetWidth; // Trigger CSS reflow to replay pulse
+      badge.classList.add('updated');
+      setTimeout(() => badge.classList.remove('updated'), 1500);
+    }
+  }
+}
+
+// ──────────────────────────────────────────────
+// Authentication handling
+// ──────────────────────────────────────────────
+async function handleLogin(e) {
+  e.preventDefault();
+  const user = $('inputUser').value.trim();
+  const pass = $('inputPass').value;
+  if (!user || !pass) { showToast('กรอก Username และ Password ด้วย', 'error'); return; }
+
+  $('loginBtnText').hidden = true;
+  $('loginSpinner').hidden = false;
+  $('loginBtn').disabled = true;
+
+  const loginRes = CONFIG.demoMode ? await mockLogin(user, pass) : await realLogin(user, pass);
+
+  $('loginBtnText').hidden = false;
+  $('loginSpinner').hidden = true;
+  $('loginBtn').disabled = false;
+
+  if (loginRes?.ok) {
+    const userAccount = loginRes.user || user;
+    setConnected(true, userAccount);
+    showToast(`✅ เชื่อมต่อสำเร็จ! ยินดีต้อนรับ ${userAccount}`, 'success');
+    fetchData();
+    if ($('autoRefreshToggle').checked) startAutoRefresh();
+  } else {
+    showToast('❌ Username หรือ Password ไม่ถูกต้อง', 'error');
+    setConnected(false);
+  }
+}
+
+async function handleLogout() {
+  showToast('กำลังออกจากระบบ...', 'info', 1500);
+  try { await fetch('proxy.php?action=logout'); } catch (e) { console.warn('[AIIR Logout]', e); }
+  setConnected(false);
+  showToast('🚪 ออกจากระบบเรียบร้อยแล้ว', 'info');
+}
+
+function showDashboard() {
+  toggleEl('welcomeScreen', false);
+  toggleEl('dashboard', true, 'block');
+  toggleEl('aiFloatingBtn', true, 'flex');
+  initAIFloatingWidget();
+}
+
+function hideDashboard() {
+  toggleEl('welcomeScreen', true);
+  toggleEl('dashboard', false, 'block');
+  toggleEl('aiFloatingBtn', false, 'flex');
+  closeAIModal();
+}
+
+async function mockLogin(user, pass) {
+  await sleep(900);
+  return { ok: user === 'admin' && pass.length >= 1, user: user };
+}
+
+async function realLogin(user, pass) {
+  try {
+    const res = await fetch(CONFIG.loginUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user, pass }),
+    });
+    const json = await res.json();
+    if (!json.ok && json.error) console.warn('[AIIR Login]', json.error);
+    return { ok: json.ok === true, user: json.user || user };
+  } catch (e) {
+    console.error('[AIIR Login] fetch error:', e);
+    return { ok: false, user: '' };
+  }
+}
+
+// ──────────────────────────────────────────────
+// Data fetching from API (Room SITE 4 ICT 401 Only)
+// ──────────────────────────────────────────────
+async function fetchData() {
+  if (!STATE.isLoggedIn) return;
+  const btn = $('manualRefreshBtn');
+  if (btn) btn.classList.add('spinning');
+
+  try {
+    const spec = CONFIG.demoMode ? await mockFetchSite4() : await realFetchSite4();
+    if (spec) {
+      const pm25Val = parseFloat(spec.pm25 ?? spec.PM25 ?? 0);
+      const pm10Val = parseFloat(spec.pm10 ?? spec.PM10 ?? 0);
+      const co2Val = parseFloat(spec.co2 ?? spec.CO2 ?? 0);
+      const tempVal = parseFloat(spec.temp ?? spec.Temp ?? 0);
+      const humidVal = parseFloat(spec.humid ?? spec.Humid ?? 0);
+      const evocVal = parseFloat(spec.evoc ?? spec.eVOC ?? 0);
+      const rssiVal = String(spec.rssi ?? spec.RSSI ?? '0');
+      const specUpd = spec.lastUpdate || nowStr();
+
+      STATE.site4Data = {
+        Site: '4', SiteName: 'Site 4 - ICT401',
+        'PM2.5': pm25Val, 'PM10': pm10Val, 'CO2': co2Val,
+        'RSSI': rssiVal, temp: tempVal, humid: humidVal, evoc: evocVal,
+        lastUpdate: specUpd,
+      };
+
+      // Seed historical records from server if local session has no prior logs
+      if (STATE.historyLogs.length <= 1 && Array.isArray(spec.history) && spec.history.length > 0) {
+        STATE.historyLogs = spec.history.slice(-30).map(h => ({
+          timestamp: h.timestamp || Date.now(),
+          label: h.label || (h.time ? h.time.substring(11, 19) : ''),
+          time: h.time || '',
+          site: h.site || 'Site 4 - ICT401',
+          pm25: parseFloat(h.pm25 || 0),
+          pm10: parseFloat(h.pm10 || 0),
+          co2: parseFloat(h.co2 || 0),
+          temp: parseFloat(h.temp || 0),
+          humid: parseFloat(h.humid || 0),
+          evoc: parseFloat(h.evoc || 0),
+          rssi: String(h.rssi || '0'),
+        }));
+      }
+
+      // Continuously append each live reading to session history based on machine time
+      appendHistory(STATE.site4Data);
+
+      renderSiteDetail(STATE.site4Data);
+      updateLastUpdate(specUpd);
+    } else {
+      updateLastUpdate();
+    }
+  } catch (err) {
+    console.error('fetchData error:', err);
+    showToast('เกิดข้อผิดพลาดในการดึงข้อมูล', 'error');
+  } finally {
+    if (btn) btn.classList.remove('spinning');
+  }
+}
+
+async function realFetchSite4() {
+  // 1. Primary: fetch from current server proxy.php
+  try {
+    const res = await fetch(CONFIG.specDataUrl);
+    const json = await res.json();
+    if (!json.ok) {
+      if (json.error === 'session_expired') {
+        setConnected(false);
+        showToast('Session หมดอายุ กรุณา Login ใหม่', 'error', 5000);
+      } else {
+        console.warn('[getSpecData]', json.error, json.raw ?? '');
+      }
+    } else if (!json.fallback) {
+      return json; // Live server data directly from emtrontech
+    }
+  } catch (e) {
+    console.warn('[getSpecData] Local server fetch error:', e);
+  }
+
+  // 2. Secondary: If running on a restricted intranet VM (10.7.x.x) where outbound cURL is blocked,
+  // fallback to fetching through our live cloud endpoint on great-site.net
+  try {
+    const cloudUrl = 'http://air-ict401.great-site.net/proxy.php?action=getSpecData&site=4&siteType=4';
+    const cloudRes = await fetch(cloudUrl, { signal: AbortSignal.timeout(6000) });
+    if (cloudRes.ok) {
+      const cloudJson = await cloudRes.json();
+      if (cloudJson.ok && (cloudJson.temp || cloudJson.co2 || cloudJson.pm25)) {
+        // Sync the live data back into the local server's cache
+        try {
+          fetch('proxy.php?action=pushData', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cloudJson),
+          });
+        } catch (pushErr) {}
+        return cloudJson;
+      }
+    }
+  } catch (cloudErr) {
+    console.warn('[getSpecData] Cloud bridge fallback error:', cloudErr);
+  }
+
+  // 3. Fallback: Return whatever local server has if cloud is also unreachable
+  try {
+    const res = await fetch(CONFIG.specDataUrl);
+    const json = await res.json();
+    if (json.ok) return json;
+  } catch (e) {}
+
+  return null;
+}
+
+async function mockFetchSite4() {
+  await sleep(600 + Math.random() * 400);
+  const pm25 = rand(5, 60), pm10 = rand(pm25, pm25 * 1.8);
+  const co2 = rand(400, 1400), temp = rand(22, 32);
+  const humid = rand(35, 75), evoc = rand(5, 45), rssi = rand(-85, -40, 0);
+
+  // Mock 45-minute interval cache logs
+  const nowTs = Date.now();
+  const mock45m = [];
+  for (let i = 5; i >= 0; i--) {
+    const t = new Date(nowTs - i * 45 * 60 * 1000);
+    const label = `${String(t.getDate()).padStart(2, '0')}/${String(t.getMonth() + 1).padStart(2, '0')} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    mock45m.push({
+      timestamp: t.getTime(), label, time: `${label}:00`, site: 'Site 4 - ICT401',
+      pm25: rand(10, 45), pm10: rand(20, 70), co2: rand(450, 1100),
+      temp: rand(23, 29), humid: rand(40, 65), evoc: rand(10, 35),
+      rssi: '-65', iaqScore: rand(70, 95, 0)
+    });
+  }
+  return { ok: true, pm25, pm10, co2, temp, humid, evoc, rssi, lastUpdate: nowStr(), history45m: mock45m };
+}
+
+// ──────────────────────────────────────────────
+// Time filter & History tracking (Synced with local machine time)
+// ──────────────────────────────────────────────
+function setTimeFilter(mode) {
+  STATE.timeFilter = mode;
+  ['tf-all', 'tf-15m', 'tf-30m', 'tf-1h'].forEach(id => {
+    const btn = $(id);
+    if (btn) btn.classList.toggle('active', id === `tf-${mode}`);
+  });
+  updateTrendChart();
+  const label = { '15m': '15 นาทีล่าสุด', '30m': '30 นาทีล่าสุด', '1h': '1 ชั่วโมงล่าสุด' }[mode] || 'ทั้งหมดในรอบ Login';
+  showToast(`📊 แสดงกราฟช่วงเวลา: ${label}`, 'info', 2000);
+}
+
+function appendHistory(data) {
+  if (!data) return;
+  const nowTs = Date.now();
+  const label = new Date(nowTs).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const pm25Val = parseFloat(data['PM2.5'] ?? data.pm25 ?? 0);
+  const co2Val = parseFloat(data.CO2 ?? data.co2 ?? 0);
+  const tempVal = parseFloat(data.temp ?? 0);
+
+  // Prevent duplicate addition if called within 2 seconds
+  const lastEntry = STATE.historyLogs[STATE.historyLogs.length - 1];
+  if (lastEntry && (nowTs - lastEntry.timestamp < 2000)) {
+    return;
+  }
+
+  const push = (arr, val) => { arr.push(val ?? 0); if (arr.length > 300) arr.shift(); };
+  push(STATE.historyLabels, label);
+  push(STATE.historyPM25, pm25Val);
+  push(STATE.historyCO2, co2Val);
+  push(STATE.historyTemp, tempVal);
+
+  STATE.historyLogs.push({
+    timestamp: nowTs,
+    label,
+    time: `${new Date(nowTs).toLocaleDateString('th-TH')} ${label}`,
+    site: 'Site 4 - ICT401',
+    pm25: pm25Val,
+    pm10: parseFloat(data['PM10'] ?? data.pm10 ?? 0),
+    co2: co2Val,
+    temp: tempVal,
+    humid: parseFloat(data.humid ?? 0),
+    evoc: parseFloat(data.evoc ?? 0),
+    rssi: String(data.RSSI ?? data.rssi ?? '0'),
+  });
+  if (STATE.historyLogs.length > 300) STATE.historyLogs.shift();
+  updateTrendChart();
+}
+
+// ──────────────────────────────────────────────
+// Overview tab rendering
+// ──────────────────────────────────────────────
+function renderOverview(sites) {
+  const grid = $('sitesGrid');
+  const empty = document.getElementById('overviewEmpty');
+  if (empty) empty.remove();
+  grid.querySelectorAll('.site-card').forEach(c => c.remove());
+
+  sites.forEach((s, i) => {
+    const pm25 = parseFloat(s['PM2.5'] ?? 0);
+    const pm10 = parseFloat(s.PM10 ?? 0);
+    const co2 = parseFloat(s.CO2 ?? 0);
+    const isOn = (s.Status || '').toLowerCase().includes('online') || (s.Status || '').toLowerCase().includes('ok');
+    const { label: pm25Lbl, pillClass } = pm25Pill(pm25);
+    const pm25C = getLevel('pm25', pm25).color;
+    const co2C = getLevel('co2', co2).color;
+
+    const card = document.createElement('div');
+    card.className = 'site-card';
+    card.style.animationDelay = `${i * 0.06}s`;
+    card.innerHTML = `
+      <div class="site-card-header">
+        <div class="site-name">${s.SiteName || 'Site ' + s.Site}</div>
+        <div class="site-status-pill ${!isOn ? 'pill-off' : pillClass}">${!isOn ? 'Offline' : pm25Lbl}</div>
+      </div>
+      <div class="site-stats">
+        <div class="stat-item">
+          <div class="stat-val" style="color:${pm25C}">${pm25.toFixed(1)}</div>
+          <div class="stat-label">PM2.5</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-val" style="color:${co2C}">${co2.toFixed(0)}</div>
+          <div class="stat-label">CO2</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-val">${pm10.toFixed(1)}</div>
+          <div class="stat-label">PM10</div>
+        </div>
+      </div>
+      <div class="site-update">📡 RSSI: ${s.RSSI} dBm &nbsp;|&nbsp; ${s.Update}</div>
+    `;
+    grid.appendChild(card);
+  });
+  renderTable(sites);
+}
+
+function renderTable(sites) {
+  const panel = $('tablePanel');
+  panel.hidden = false;
+  const tbody = $('sitesTableBody');
+  tbody.innerHTML = '';
+  sites.forEach(s => {
+    const pm25 = parseFloat(s['PM2.5'] ?? 0);
+    const co2 = parseFloat(s.CO2 ?? 0);
+    const isOn = (s.Status || '').toLowerCase().includes('online');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${s.SiteName || 'Site ' + s.Site}</strong></td>
+      <td><span class="site-status-pill ${isOn ? 'pill-ok' : 'pill-off'}">${s.Status}</span></td>
+      <td style="color:${getLevel('pm25', pm25).color}">${pm25.toFixed(1)}</td>
+      <td>${parseFloat(s.PM10 ?? 0).toFixed(1)}</td>
+      <td style="color:${getLevel('co2', co2).color}">${parseFloat(co2).toFixed(0)}</td>
+      <td>${s.RSSI} dBm</td>
+      <td style="font-size:0.8rem;color:var(--text-muted)">${s.Update}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ──────────────────────────────────────────────
+// Metric display (unified setMetric replaces setMetric + setMetricRaw)
+// ──────────────────────────────────────────────
+function setMetric(key, valStr, barPct, label, cls, color) {
+  const valEl = $(`val-${key}`);
+  if (valEl) valEl.textContent = valStr;
+  const bar = $(`bar-${key}`);
+  if (bar) { bar.style.width = clamp(barPct, 0, 100) + '%'; bar.style.background = color; }
+  const statusEl = $(`status-${key}`);
+  if (statusEl) { statusEl.textContent = '● ' + label; statusEl.className = `metric-status ${cls}`; }
+}
+
+// Site 4 detail tab rendering
+function renderSiteDetail(data) {
+  const pm25 = parseFloat(data['PM2.5'] ?? data.pm25 ?? 0);
+  const pm10 = parseFloat(data.PM10 ?? data.pm10 ?? 0);
+  const co2 = parseFloat(data.CO2 ?? data.co2 ?? 0);
+  const temp = parseFloat(data.temp ?? 0);
+  const humid = parseFloat(data.humid ?? 0);
+  const evoc = parseFloat(data.evoc ?? 0);
+  const rssi = parseFloat(data.RSSI ?? data.rssi ?? -70);
+
+  // Top 4 Hero Metrics (PM10, CO2, Temp, Humid)
+  const pm10L = getLevel('pm10', pm10);
+  setMetric('pm10', pm10.toFixed(1), (pm10 / 150) * 100, pm10L.label, pm10L.cls, pm10L.color);
+
+  const co2L = getLevel('co2', co2);
+  setMetric('co2', co2.toFixed(0), (co2 / 1500) * 100, co2L.label, co2L.cls, co2L.color);
+
+  const tempL = getLevel('temp', temp);
+  const tempPct = clamp(((temp - 16) / (40 - 16)) * 100, 0, 100);
+  setMetric('temp', temp.toFixed(1), tempPct, tempL.label, tempL.cls, tempL.color);
+
+  const humidL = getLevel('humid', humid);
+  const humidPct = clamp(humid, 0, 100);
+  setMetric('humid', humid.toFixed(1), humidPct, humidL.label, humidL.cls, humidL.color);
+
+  // Secondary Metrics (PM2.5, EVOC, RSSI)
+  const pm25L = getLevel('pm25', pm25);
+  setMetric('pm25', pm25.toFixed(1), (pm25 / 75) * 100, pm25L.label, pm25L.cls, pm25L.color);
+
+  const evocL = getLevel('evoc', evoc);
+  const evocPct = clamp((evoc / 50) * 100, 0, 100);
+  setMetric('evoc', evoc.toFixed(0), evocPct, evocL.label, evocL.cls, evocL.color);
+
+  const rssiNorm = clamp(((rssi + 100) / 60) * 100, 0, 100);
+  const rssiStatus = rssi >= -65 ? 'ดีเยี่ยม' : rssi >= -75 ? 'ดี' : rssi >= -85 ? 'พอใช้' : 'อ่อน';
+  const rssiCls = rssi >= -75 ? 'good' : rssi >= -85 ? 'warn' : 'bad';
+  const rssiColor = rssi >= -75 ? '#10B981' : rssi >= -85 ? '#F59E0B' : '#EF4444';
+  setMetric('rssi', rssi.toFixed(0), rssiNorm, rssiStatus, rssiCls, rssiColor);
+
+  renderControlCards(pm25, co2, temp, humid, pm10, evoc);
+  refreshGauges(pm10, co2, temp, humid);
+  checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc);
+}
+
+// ──────────────────────────────────────────────
+// Audio Alert Player (Web Audio API Synthesizer)
+// ──────────────────────────────────────────────
+function playAlertSound() {
+  if (!STATE.soundAlertEnabled) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(587.33, ctx.currentTime + 0.25);
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.25);
+  } catch (e) { console.warn('[AudioAlert]', e); }
+}
+
+function toggleSoundAlert() {
+  STATE.soundAlertEnabled = !STATE.soundAlertEnabled;
+  const icon = $('soundAlertIcon'), txt = $('soundAlertText'), btn = $('soundAlertToggleBtn');
+  if (STATE.soundAlertEnabled) {
+    if (icon) icon.textContent = '🔔';
+    if (txt) txt.textContent = 'ระบบแจ้งเตือน: เปิด';
+    if (btn) btn.classList.remove('muted');
+    showToast('🔔 เปิดระบบแจ้งเตือนและ Pop-Up เรียบร้อยแล้ว', 'info');
+  } else {
+    if (icon) icon.textContent = '🔕';
+    if (txt) txt.textContent = 'ระบบแจ้งเตือน: ปิด';
+    if (btn) btn.classList.add('muted');
+    showToast('🔕 ปิดระบบแจ้งเตือนและ Pop-Up แล้ว', 'info');
+  }
+}
+
+function dismissAlertBanner() {
+  const banner = $('alertBannerWrap');
+  if (banner) { banner.setAttribute('hidden', 'true'); banner.style.display = 'none'; }
+}
+
+function closeAlertModal() {
+  const modal = $('alertModalOverlay');
+  if (modal) { modal.setAttribute('hidden', 'true'); modal.style.display = 'none'; }
+}
+
+// Test trigger for Emergency Alert Pop-Up Modal
+function testAlertModal() {
+  checkAirQualityAlerts(48.5, 112.0, 1250, 31.5, 74.0, 65, true);
+  showToast('🧪 แสดงผล Pop-Up แจ้งเตือนฉุกเฉินระดับอันตราย (Test Mode)', 'info', 3500);
+}
+
+// ──────────────────────────────────────────────
+// Air Quality Threshold Alerts Check (data-driven)
+// ──────────────────────────────────────────────
+function checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc, isTest = false) {
+  if (!STATE.soundAlertEnabled && !isTest) { dismissAlertBanner(); closeAlertModal(); return; }
+
+  const values = { pm25, pm10, co2, temp, humid, evoc };
+  const alerts = [], alertDetails = [], alertCards = {};
+
+  ALERT_DEFS.forEach(def => {
+    const v = values[def.key];
+    const threshold = CONFIG.thresholds[def.key];
+    alertCards[def.key] = false;
+    if (v > threshold) {
+      const valStr = def.format ? def.format(v) : `${v.toFixed(def.decimals)} ${def.unit}`;
+      const limitStr = def.limitFmt ? def.limitFmt(threshold) : `> ${threshold}`;
+      alerts.push(`${def.shortName} สูง (${valStr})`);
+      alertDetails.push({ name: `${def.icon} ${def.name}`, val: valStr, limit: limitStr });
+      alertCards[def.key] = true;
+    }
+  });
+
+  // Toggle pulsing animation on metric cards
+  ['pm25', 'pm10', 'co2', 'temp', 'humid', 'evoc'].forEach(k => {
+    const card = $(`mc-${k}`);
+    if (card) card.classList.toggle('card-alert-pulse', !!alertCards[k]);
+  });
+
+  const banner = $('alertBannerWrap'), bannerText = $('alertBannerText');
+  const modal = $('alertModalOverlay'), modalList = $('alertModalList');
+
+  if (alerts.length > 0) {
+    if (bannerText) bannerText.innerHTML = `ตรวจพบ <strong>${alerts.length} ดัชนี</strong> เกินเกณฑ์มาตรฐานความปลอดภัย: <strong>${alerts.join(' • ')}</strong>`;
+    if (banner) { banner.removeAttribute('hidden'); banner.style.display = 'flex'; }
+
+    if (modalList) {
+      modalList.innerHTML = alertDetails.map(item => `
+        <div class="alert-modal-item">
+          <span>${item.name}</span>
+          <span class="alert-modal-item-val">${item.val} <small style="font-weight:400;opacity:0.75">(เกณฑ์ ${item.limit})</small></span>
+        </div>
+      `).join('');
+    }
+    if (modal) { modal.removeAttribute('hidden'); modal.style.display = 'flex'; }
+    showToast(`⚠️ เตือนภัย! ตรวจพบค่าคุณภาพอากาศเกินมาตรฐาน (${alerts.length} รายการ)`, 'error', 4500);
+    playAlertSound();
+  } else {
+    if (banner) dismissAlertBanner();
+    if (!isTest && modal) closeAlertModal();
+  }
+}
+
+// ──────────────────────────────────────────────
+// AI Smart HVAC Automation Engine
+// ──────────────────────────────────────────────
+function runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc) {
+  pm25 = parseFloat(pm25 || 0); pm10 = parseFloat(pm10 || 0);
+  co2 = parseFloat(co2 || 0); temp = parseFloat(temp || 0);
+  humid = parseFloat(humid || 0); evoc = parseFloat(evoc || 0);
+
+  // 1. Calculate Comprehensive AI IAQ Health Index Score (0 - 100%)
+  const pm25Penalty = clamp((pm25 / 50) * 35, 0, 35);
+  const co2Penalty = clamp(((co2 - 400) / 1200) * 35, 0, 35);
+  const evocPenalty = clamp((evoc / 50) * 15, 0, 15);
+  const tempPenalty = (temp < 20 || temp > 28) ? clamp(Math.abs(temp - 24) * 2, 0, 10) : 0;
+  const humidPenalty = (humid < 40 || humid > 65) ? clamp(Math.abs(humid - 50) * 0.3, 0, 15) : 0;
+  const iaqScore = Math.max(10, Math.round(100 - (pm25Penalty + co2Penalty + evocPenalty + tempPenalty + humidPenalty)));
+
+  // 2. Perceived Temperature & Thermal Comfort (Steadman Heat Index Model)
+  let perceivedTemp = temp;
+  if (temp >= 24 && humid > 55) perceivedTemp = temp + 0.1 * (humid - 55);
+  else if (temp < 22 && humid < 40) perceivedTemp = temp - 0.08 * (40 - humid);
+  perceivedTemp = parseFloat(perceivedTemp.toFixed(1));
+
+  // 3. Air Purifier AI Decision
+  const purifier = (pm25 > 35 || pm10 > 75 || evoc > 40)
+    ? {
+      state: '🔴 เปิดเร่งด่วน (Boost Mode 85-100%)', badge: 'High Boost', pillClass: 'pill-bad',
+      details: `HEPA + Carbon Filter Active • ตรวจพบฝุ่น/EVOC สูง (PM2.5: ${pm25.toFixed(1)}, EVOC: ${evoc.toFixed(0)} ppb)`
+    }
+    : (pm25 > 12 || pm10 > 35 || evoc > 15)
+      ? {
+        state: '🟡 เปิดทำงานแบบสมดุล (Eco Auto 45%)', badge: 'Eco Auto', pillClass: 'pill-warn',
+        details: `HEPA Filter Active • ควบคุมค่าฝุ่นระดับปานกลาง (จำกัดค่าฝุ่น PM2.5 ≤ 12 µg/m³)`
+      }
+      : {
+        state: '🟢 สแตนบายด์ (Standby 15%)', badge: 'Standby', pillClass: 'pill-ok',
+        details: `อากาศในห้องสะอาดบริสุทธิ์ (Air Cleanliness Index: ${iaqScore}%) • หมุนเวียนลมเบาเพื่อประหยัดไฟ`
+      };
+
+  // 4. Ventilation System AI Decision
+  const ventilation = (co2 > 1000)
+    ? {
+      state: '🔴 เปิดระบายอากาศเต็มกำลัง (Fresh Air Valve 100%)', badge: 'Max Exchange', pillClass: 'pill-bad',
+      details: `Air Exchange Rate 3.8 ACH • ตรวจพบ CO2 สูงสะสม (${co2.toFixed(0)} ppm) • เร่งดึงอากาศสดนอกอาคาร`
+    }
+    : (co2 > 750)
+      ? {
+        state: '🟡 เปิดระบายอากาศแบบปรับแปร (Fresh Air 50-65%)', badge: 'Auto Exchange', pillClass: 'pill-warn',
+        details: `Air Exchange Rate 2.1 ACH • ควบคุมระดับ CO2 ให้อยู่ในสภาวะสมดุลสำหรับห้องประชุม (<800 ppm)`
+      }
+      : {
+        state: '🟢 เปิดระบายอากาศขั้นต่ำ (Minimum Fresh Air 20%)', badge: 'Min Exchange', pillClass: 'pill-ok',
+        details: `ระดับ CO2 เหมาะสมดีเยี่ยม (${co2.toFixed(0)} ppm) • หมุนเวียนอากาศเพื่อรักษาสมดุลความเย็น`
+      };
+
+  // 5. Air Conditioning AI Decision
+  const ac = (temp > 29 || perceivedTemp > 30)
+    ? {
+      state: `🔴 เปิดทำความเย็นหนัก (Cool Mode 23.0°C • High Fan)`, badge: 'Cool High', pillClass: 'pill-bad',
+      details: `อุณหภูมิห้อง ${temp.toFixed(1)}°C (รู้สึกจริง ${perceivedTemp.toFixed(1)}°C) • เร่งปรับลดอุณหภูมิทางความร้อน`
+    }
+    : (temp > 26 || perceivedTemp > 26.5)
+      ? {
+        state: `🟡 เปิดทำความเย็นปกติ (Cool Mode 25.0°C • Auto Fan)`, badge: 'Cool Auto', pillClass: 'pill-warn',
+        details: `อุณหภูมิอุ่นเล็กน้อย (${temp.toFixed(1)}°C) • ควบคุมความสบายทางความร้อน (PMV Index: Thermal Balanced)`
+      }
+      : {
+        state: `🟢 ปรับโหมดประหยัดพลังงาน (Eco Mode 25.5°C)`, badge: 'Eco Saving', pillClass: 'pill-ok',
+        details: `อุณหภูมิเย็นสบายเหมาะสม (${temp.toFixed(1)}°C) • ประหยัดพลังงานไฟเบอร์สูงสุด 88%`
+      };
+
+  // 6. Humidity Control AI Decision
+  const humidity = (humid > 65)
+    ? {
+      state: `🔴 Dehumidifier Active (High Boost 80%)`, badge: 'Dry Boost', pillClass: 'pill-bad',
+      details: `ความชื้นสัมพัทธ์สูง (${humid.toFixed(1)}%RH) • เร่งดึงความชื้นออกจากห้อง ป้องกันเชื้อราและไวรัส`
+    }
+    : (humid > 58)
+      ? {
+        state: `🟡 Dehumidifier Active (Low Auto 40%)`, badge: 'Dry Auto', pillClass: 'pill-warn',
+        details: `ความชื้นสะสม (${humid.toFixed(1)}%RH) • รักษาระดับความชื้นสัมพัทธ์ในสภาวะน่าสบาย (45-55%RH)`
+      }
+      : (humid < 38)
+        ? {
+          state: `🟡 Humidifier Active (Moisture Boost 50%)`, badge: 'Humidify', pillClass: 'pill-warn',
+          details: `อากาศแห้งเกินไป (${humid.toFixed(1)}%RH) • เพิ่มความชื้นสัมพัทธ์เพื่อป้องกันการระคายเคือง`
+        }
+        : {
+          state: `🟢 ปิด / สแตนบายด์ (Humidity Balanced)`, badge: 'Balanced', pillClass: 'pill-ok',
+          details: `ความชื้นสัมพัทธ์ในห้องอยู่ในเกณฑ์สมบูรณ์แบบ (${humid.toFixed(1)}%RH)`
+        };
+
+  // 7. AI Predictive Summary Insight
+  const aiInsight = iaqScore >= 85
+    ? `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศในห้อง ICT401 อยู่ในเกณฑ์ประเสริฐสุด (IAQ Score: <strong>${iaqScore}/100</strong>) โมเดล AIR-IAQNet แนะนำให้รักษาระดับการทำงานของ HVAC ในโหมด Eco เพื่อประหยัดพลังงานไฟเบอร์สูงสุด`
+    : iaqScore >= 65
+      ? `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศอยู่ในระดับปานกลาง (IAQ Score: <strong>${iaqScore}/100</strong>) ตรวจพบค่า CO2 และความชื้นสะสมย่อย โมเดลสั่งเปิดระบบระบายอากาศ 60% ร่วมกับลดความชื้นอัตโนมัติ คาดการณ์คุณภาพอากาศกลับสู่ระดับดีเยี่ยมใน ~10 นาที`
+      : `💡 <strong>AI Reasoning & Action Plan</strong>: คุณภาพอากาศต้องการการฟื้นฟูเร่งด่วน (IAQ Score: <strong>${iaqScore}/100</strong>) ตรวจพบฝุ่นหรือก๊าซสะสมสูง โมเดลสั่งเปิดระบบฟอกอากาศและระบายอากาศแบบ Full Boost อากาศจะกลับสู่เกณฑ์ปกติใน ~18 นาที`;
+
+  return { iaqScore, perceivedTemp, purifier, ventilation, ac, humidity, insight: aiInsight };
+}
+
+// ──────────────────────────────────────────────
+// Control recommendations (loop-driven DOM update)
+// ──────────────────────────────────────────────
+function renderControlCards(pm25, co2, temp, humid, pm10 = 0, evoc = 0) {
+  const m = runAIInferenceEngine(pm25, pm10, co2, temp, humid, evoc);
+
+  const scoreEl = $('aiScoreVal');
+  if (scoreEl) scoreEl.textContent = `${m.iaqScore}/100`;
+
+  const floatScoreEl = $('aiFloatingScore');
+  if (floatScoreEl) {
+    floatScoreEl.textContent = `${m.iaqScore}/100`;
+    floatScoreEl.style.color = m.iaqScore >= 85 ? '#0D9488' : (m.iaqScore >= 65 ? '#D97706' : '#EF4444');
+  }
+
+  // Loop-driven update for 4 control cards (replaces 4 duplicate blocks)
+  ['purifier', 'ventilation', 'ac', 'humidity'].forEach(key => {
+    const r = m[key];
+    const cmd = $(`cmd-${key}`), badge = $(`badge-${key}`), detail = $(`detail-${key}`);
+    if (cmd) cmd.textContent = r.state;
+    if (badge) { badge.textContent = r.badge; badge.className = `ai-badge ${r.pillClass}`; }
+    if (detail) detail.textContent = r.details;
+  });
+
+  if ($('aiInsightBox')) $('aiInsightBox').innerHTML = m.insight;
+}
+
+// ──────────────────────────────────────────────
+// AI Floating Draggable Widget & Modal Controller
+// ──────────────────────────────────────────────
+let aiWidgetInitialized = false;
+
+function openAIModal() {
+  const modal = $('aiModalOverlay');
+  if (modal) modal.classList.add('open');
+}
+
+function closeAIModal() {
+  const modal = $('aiModalOverlay');
+  if (modal) modal.classList.remove('open');
+}
+
+function handleAIModalBackdrop(e) {
+  if (e.target && e.target.id === 'aiModalOverlay') {
+    closeAIModal();
+  }
+}
+
+function initAIFloatingWidget() {
+  const btn = $('aiFloatingBtn');
+  if (!btn || aiWidgetInitialized) return;
+  aiWidgetInitialized = true;
+
+  let isDragging = false;
+  let hasMoved = false;
+  let startX = 0, startY = 0;
+  let origX = 0, origY = 0;
+  const DRAG_THRESHOLD = 6; // px
+
+  function clampAndSetPos(x, y) {
+    const btnRect = btn.getBoundingClientRect();
+    const w = btnRect.width > 0 ? btnRect.width : 140;
+    const h = btnRect.height > 0 ? btnRect.height : 54;
+    const maxX = Math.max(10, window.innerWidth - w - 10);
+    const maxY = Math.max(10, window.innerHeight - h - 10);
+    const clampedX = clamp(x, 10, maxX);
+    const clampedY = clamp(y, 10, maxY);
+
+    btn.style.left = `${clampedX}px`;
+    btn.style.top = `${clampedY}px`;
+    btn.style.right = 'auto';
+    btn.style.bottom = 'auto';
+    return { x: clampedX, y: clampedY };
+  }
+
+  // Restore saved position if available
+  try {
+    const saved = localStorage.getItem('ai_widget_pos');
+    if (saved) {
+      const pos = JSON.parse(saved);
+      if (typeof pos.x === 'number' && typeof pos.y === 'number') {
+        clampAndSetPos(pos.x, pos.y);
+      }
+    }
+  } catch (e) { console.warn('[AI Widget Pos Restore]', e); }
+
+  function onPointerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return; // Only main button
+
+    isDragging = true;
+    hasMoved = false;
+
+    const clientX = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const clientY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+    startX = clientX;
+    startY = clientY;
+
+    const rect = btn.getBoundingClientRect();
+    origX = rect.left;
+    origY = rect.top;
+
+    btn.classList.add('dragging');
+
+    window.addEventListener('mousemove', onPointerMove, { passive: false });
+    window.addEventListener('mouseup', onPointerUp);
+    window.addEventListener('touchmove', onPointerMove, { passive: false });
+    window.addEventListener('touchend', onPointerUp);
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    const clientX = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const clientY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+
+    if (!hasMoved && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+      hasMoved = true;
+    }
+
+    if (hasMoved) {
+      if (e.cancelable) e.preventDefault();
+      clampAndSetPos(origX + dx, origY + dy);
+    }
+  }
+
+  function onPointerUp(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    btn.classList.remove('dragging');
+
+    window.removeEventListener('mousemove', onPointerMove);
+    window.removeEventListener('mouseup', onPointerUp);
+    window.removeEventListener('touchmove', onPointerMove);
+    window.removeEventListener('touchend', onPointerUp);
+
+    if (hasMoved) {
+      const rect = btn.getBoundingClientRect();
+      const pos = clampAndSetPos(rect.left, rect.top);
+      try {
+        localStorage.setItem('ai_widget_pos', JSON.stringify(pos));
+      } catch (err) {}
+    } else {
+      // It was a click!
+      openAIModal();
+    }
+  }
+
+  btn.addEventListener('mousedown', onPointerDown);
+  btn.addEventListener('touchstart', onPointerDown, { passive: true });
+
+  // Escape key closes modal
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAIModal();
+  });
+
+  // Reposition within window on resize
+  window.addEventListener('resize', debounce(() => {
+    if (btn.style.left && btn.style.top) {
+      const rect = btn.getBoundingClientRect();
+      clampAndSetPos(rect.left, rect.top);
+    }
+  }, 150));
+}
+
+// ──────────────────────────────────────────────
+// Semi-circle gauge charts
+// ──────────────────────────────────────────────
+function drawGauge(canvasId, value, max, ranges, unit) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const theme = document.documentElement.getAttribute('data-theme') || 'light';
+  const isLight = theme === 'light';
+
+  let color = '#0D9488';
+  for (const r of ranges) { if (value >= r.min && value <= r.max) { color = r.color; break; } }
+
+  const pct = clamp(value / max, 0, 1);
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const W = rect.width > 0 ? rect.width : 260;
+  const H = rect.height > 0 ? rect.height : 180;
+
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.scale(dpr, dpr);
+
+  // Position center Y at H - 28 to leave 28px breathing room for bottom tick labels
+  const cyr = H - 28;
+  const ro = Math.min((W - 36) / 2, cyr - 16);
+  const ri = ro - Math.max(16, ro * 0.25);
+  const cxr = W / 2;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Arc track background
+  ctx.beginPath();
+  ctx.arc(cxr, cyr, ro, Math.PI, 2 * Math.PI);
+  ctx.arc(cxr, cyr, ri, 2 * Math.PI, Math.PI, true);
+  ctx.closePath();
+  ctx.fillStyle = isLight ? 'rgba(226, 232, 240, 0.7)' : 'rgba(255, 255, 255, 0.08)';
+  ctx.fill();
+
+  // Active filled arc with ambient glow
+  if (pct > 0) {
+    const startAngle = Math.PI, endAngle = Math.PI + pct * Math.PI;
+    ctx.beginPath();
+    ctx.arc(cxr, cyr, ro, startAngle, endAngle);
+    ctx.arc(cxr, cyr, ri, endAngle, startAngle, true);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.shadowBlur = isLight ? 10 : 16;
+    ctx.shadowColor = color;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Large numerical value in center of arch
+  const valueFontSize = Math.max(22, Math.floor(ro * 0.44));
+  ctx.fillStyle = isLight ? '#0F172A' : '#FFFFFF';
+  ctx.font = `800 ${valueFontSize}px Inter, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  const textY = cyr - ro * 0.25;
+  const valDisplay = Number.isInteger(value) ? value : Number(value).toFixed(1);
+  ctx.fillText(valDisplay, cxr, textY);
+
+  // Unit text below numerical value
+  const unitFontSize = Math.max(11, Math.floor(ro * 0.18));
+  ctx.fillStyle = isLight ? '#475569' : 'rgba(255,255,255,0.7)';
+  ctx.font = `600 ${unitFontSize}px Inter, sans-serif`;
+  ctx.fillText(unit, cxr, textY + unitFontSize + 5);
+
+  // Min ('0') and Max Tick Labels at bottom left & right
+  const edgeFontSize = Math.max(10, Math.floor(ro * 0.15));
+  ctx.fillStyle = isLight ? '#64748B' : 'rgba(255,255,255,0.45)';
+  ctx.font = `600 ${edgeFontSize}px Inter, sans-serif`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillText('0', cxr - ro + 4, cyr + 6);
+  ctx.textAlign = 'right';
+  ctx.fillText(max, cxr + ro - 4, cyr + 6);
+}
+
+const PM10_RANGES = [
+  { min: 0, max: 50, color: '#10B981' },
+  { min: 50, max: 100, color: '#F59E0B' },
+  { min: 100, max: 9999, color: '#EF4444' },
+];
+const CO2_RANGES = [
+  { min: 0, max: 800, color: '#10B981' },
+  { min: 800, max: 1000, color: '#F59E0B' },
+  { min: 1000, max: 9999, color: '#EF4444' },
+];
+const TEMP_RANGES = [
+  { min: 0, max: 26, color: '#10B981' },
+  { min: 26, max: 30, color: '#F59E0B' },
+  { min: 30, max: 9999, color: '#EF4444' },
+];
+const HUMID_RANGES = [
+  { min: 0, max: 40, color: '#F59E0B' },
+  { min: 40, max: 60, color: '#10B981' },
+  { min: 60, max: 9999, color: '#EF4444' },
+];
+
+function refreshGauges(pm10, co2, temp, humid) {
+  if (pm10 === undefined && STATE.site4Data) {
+    pm10 = parseFloat(STATE.site4Data['PM10'] ?? STATE.site4Data.pm10 ?? 0);
+    co2 = parseFloat(STATE.site4Data.CO2 ?? 0);
+    temp = parseFloat(STATE.site4Data.temp ?? 0);
+    humid = parseFloat(STATE.site4Data.humid ?? 0);
+  }
+  drawGauge('gauge-pm10', pm10 || 0, 150, PM10_RANGES, 'µg/m³');
+  drawGauge('gauge-co2', co2 || 0, 1500, CO2_RANGES, 'ppm');
+  drawGauge('gauge-temp', temp || 0, 45, TEMP_RANGES, '°C');
+  drawGauge('gauge-humid', humid || 0, 100, HUMID_RANGES, '%RH');
+}
+// ──────────────────────────────────────────────
+// Historical trend line chart (Local Session Synchronized)
+// ──────────────────────────────────────────────
+function updateTrendChart() {
+  const ctx = $('trendChart');
+  if (!ctx) return;
+
+  const textColor = '#475569', gridColor = 'rgba(0,0,0,0.06)';
+  const now = Date.now();
+  let logs = [...STATE.historyLogs];
+
+  if (STATE.timeFilter === '15m') logs = logs.filter(l => l.timestamp >= now - 15 * 60 * 1000);
+  else if (STATE.timeFilter === '30m') logs = logs.filter(l => l.timestamp >= now - 30 * 60 * 1000);
+  else if (STATE.timeFilter === '1h') logs = logs.filter(l => l.timestamp >= now - 60 * 60 * 1000);
+  // 'all' displays everything collected in current login session
+
+  const labels = logs.map(l => l.label);
+  const pm25Data = logs.map(l => l.pm25);
+  const co2Data = logs.map(l => l.co2);
+  const tempData = logs.map(l => l.temp);
+
+  if (STATE.trendChart) {
+    STATE.trendChart.data.labels = labels;
+    STATE.trendChart.data.datasets[0].data = pm25Data;
+    STATE.trendChart.data.datasets[1].data = co2Data;
+    STATE.trendChart.data.datasets[2].data = tempData;
+    STATE.trendChart.update();
+    return;
+  }
+
+  const mkDataset = (label, data, color, yAxisID, fill) => ({
+    label, data, yAxisID,
+    borderColor: color,
+    backgroundColor: color === '#0D9488' ? 'rgba(13,148,136,0.12)' : (color === '#0284C7' ? 'rgba(2,132,199,0.12)' : 'rgba(217,119,6,0.12)'),
+    borderWidth: 2.5,
+    pointRadius: 4.5,
+    pointHoverRadius: 7,
+    pointBackgroundColor: color,
+    fill,
+    tension: 0.35,
+  });
+
+  STATE.trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        mkDataset('PM2.5 (µg/m³)', pm25Data, '#0D9488', 'y', true),
+        { ...mkDataset('CO2 (ppm)', co2Data, '#0284C7', 'yCO2', true), backgroundColor: 'rgba(2,132,199,0.08)' },
+        { ...mkDataset('อุณหภูมิ (°C)', tempData, '#D97706', 'y', false), backgroundColor: 'rgba(217,119,6,0.08)' },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: textColor, font: { family: 'Inter', size: 12, weight: '600' }, boxWidth: 14, usePointStyle: true } },
+        tooltip: {
+          backgroundColor: 'rgba(15,23,42,0.92)', titleColor: '#FFFFFF', bodyColor: '#E2E8F0',
+          borderColor: 'rgba(13,148,136,0.4)', borderWidth: 1, padding: 12, cornerRadius: 10,
+          bodyFont: { family: 'Inter' }, titleFont: { family: 'Inter', weight: '600' },
+        },
+      },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 11, family: 'Inter' } }, grid: { color: gridColor } },
+        y: {
+          type: 'linear', display: true, position: 'left', beginAtZero: true,
+          title: { display: true, text: 'PM2.5 (µg/m³) / อุณหภูมิ (°C)', color: textColor, font: { size: 11, family: 'Inter', weight: '600' } },
+          ticks: { color: textColor, font: { size: 11, family: 'Inter' } }, grid: { color: gridColor },
+        },
+        yCO2: {
+          type: 'linear', display: true, position: 'right', beginAtZero: false,
+          title: { display: true, text: 'CO2 (ppm)', color: '#0284C7', font: { size: 11, family: 'Inter', weight: '600' } },
+          ticks: { color: '#0284C7', font: { size: 11, family: 'Inter' } }, grid: { drawOnChartArea: false },
+        },
+      },
+    },
+  });
+}
+
+// ──────────────────────────────────────────────
+// Export data to CSV
+// ──────────────────────────────────────────────
+function downloadCSV() {
+  if (!STATE.historyLogs.length && !STATE.site4Data) { showToast('ไม่มีข้อมูลสำหรับดาวน์โหลด', 'error'); return; }
+
+  const headers = ['เวลาอัปเดต', 'ห้อง/สถานที่', 'PM2.5 (µg/m³)', 'PM10 (µg/m³)', 'CO2 (ppm)', 'อุณหภูมิ (°C)', 'ความชื้น (%RH)', 'EVOC (ppb)', 'RSSI (dBm)'];
+  const d = STATE.site4Data;
+  const logs = STATE.historyLogs.length > 0 ? STATE.historyLogs : [{
+    time: d ? (d.lastUpdate || nowStr()) : nowStr(), site: 'Site 4 - ICT401',
+    pm25: d ? d['PM2.5'] : 0, pm10: d ? d['PM10'] : 0, co2: d ? d.CO2 : 0,
+    temp: d ? d.temp : 0, humid: d ? d.humid : 0, evoc: d ? d.evoc : 0, rssi: d ? d.RSSI : '0',
+  }];
+
+  const rows = logs.map(l =>
+    [l.time, l.site, l.pm25, l.pm10, l.co2, l.temp, l.humid, l.evoc, l.rssi]
+      .map(v => `"${String(v ?? '').replace(/"/g, '""')}"`)
+      .join(',')
+  );
+  const csv = [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `AIR_ICT401_${nowStr().replace(/[/:]/g, '-')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('✅ ดาวน์โหลด CSV ข้อมูลห้อง ICT401 สำเร็จ', 'success');
+}
+
+// ──────────────────────────────────────────────
+// Initializer (single resize listener with debounce)
+// ──────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  checkAuthOnStartup();
+  window.addEventListener('resize', debounce(() => { if (STATE.site4Data) refreshGauges(); }, 200));
+});
+
+  </script>
 </body>
 
 </html>

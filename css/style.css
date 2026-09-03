@@ -719,6 +719,65 @@ body.sidebar-collapsed .main-content {
   font-size: 0.9rem;
   margin-top: 5px;
 }
+
+/* Live Update Badge in Hero Header */
+.hero-live-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card-bg);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 8px 18px;
+  border-radius: 30px;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.08);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+.hero-live-badge.updated {
+  border-color: #10B981;
+  background: rgba(16, 185, 129, 0.12);
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.35);
+  transform: scale(1.02);
+}
+.live-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #10B981;
+  flex-shrink: 0;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+}
+.live-pulse-dot.pulsing {
+  animation: livePulse 2s infinite;
+}
+@keyframes livePulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+.live-badge-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.live-badge-status {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #059669;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.live-badge-time {
+  font-size: 0.88rem;
+  color: var(--text);
+  font-weight: 500;
+}
+.live-badge-time strong {
+  color: var(--primary);
+  font-weight: 700;
+}
+
 .hero-right {
   display: flex;
   align-items: center;

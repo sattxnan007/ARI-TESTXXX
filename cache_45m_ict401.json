@@ -43,5 +43,20 @@
         "evoc": 5,
         "rssi": "14",
         "iaqScore": 83
+    },
+    {
+        "timestamp_sec": 1788403782,
+        "timestamp": 1788403782000,
+        "label": "03\/09 04:49",
+        "time": "2026-09-03 09:48:00",
+        "site": "Site 4 - ICT401",
+        "pm25": 4,
+        "pm10": 7,
+        "co2": 717,
+        "temp": 29.1,
+        "humid": 61.3,
+        "evoc": 1,
+        "rssi": "16",
+        "iaqScore": 78
     }
 ]

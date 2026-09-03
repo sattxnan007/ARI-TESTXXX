@@ -181,20 +181,35 @@ function toggleAutoRefresh() {
   const on = $('autoRefreshToggle')?.checked || false;
   if (on) {
     if (STATE.isLoggedIn) startAutoRefresh();
-    showToast('Auto-Refresh เปิดแล้ว (ทุก 30 วินาที)', 'info');
+    showToast('🟢 Auto-Refresh เปิดแล้ว (อัปเดตสดทุก 30 วินาที)', 'info');
   } else {
     stopAutoRefresh();
-    showToast('Auto-Refresh ปิดแล้ว', 'info');
+    showToast('⏸️ Auto-Refresh หยุดชั่วคราวแล้ว', 'info');
   }
 }
 
 function startAutoRefresh() {
   stopAutoRefresh();
   STATE.autoRefreshTimer = setInterval(fetchData, CONFIG.autoRefreshMs);
+  const dot = $('heroPulseDot');
+  if (dot) dot.className = 'live-pulse-dot pulsing';
+  const status = $('heroLiveStatus');
+  if (status) status.textContent = 'LIVE AUTO-REFRESH (30s)';
+  const toggle = $('autoRefreshToggle');
+  if (toggle) toggle.checked = true;
 }
 
 function stopAutoRefresh() {
-  if (STATE.autoRefreshTimer) { clearInterval(STATE.autoRefreshTimer); STATE.autoRefreshTimer = null; }
+  if (STATE.autoRefreshTimer) {
+    clearInterval(STATE.autoRefreshTimer);
+    STATE.autoRefreshTimer = null;
+  }
+  const dot = $('heroPulseDot');
+  if (dot) dot.className = 'live-pulse-dot';
+  const status = $('heroLiveStatus');
+  if (status) status.textContent = 'PAUSED (หยุดชั่วคราว)';
+  const toggle = $('autoRefreshToggle');
+  if (toggle) toggle.checked = false;
 }
 
 // ──────────────────────────────────────────────
@@ -242,7 +257,11 @@ function setConnected(on, username = '') {
     }
 
     showDashboard();
+    if ($('autoRefreshToggle')?.checked) {
+      startAutoRefresh();
+    }
   } else {
+    stopAutoRefresh();
     STATE.username = '';
     STATE.sessionStartTime = null;
     STATE.historyLogs = [];
@@ -289,9 +308,25 @@ async function checkAuthOnStartup() {
 function updateLastUpdate(timeStr) {
   const t = timeStr || nowStr();
   const wrap = $('lastUpdateWrap');
-  if (wrap) wrap.hidden = false;
+  if (wrap) {
+    wrap.hidden = false;
+    wrap.removeAttribute('hidden');
+    wrap.style.display = 'block';
+  }
   const el = $('lastUpdateTime');
   if (el) el.textContent = t;
+
+  const heroTime = $('heroLastUpdateTime');
+  if (heroTime) {
+    heroTime.textContent = t;
+    const badge = $('heroLiveBadge');
+    if (badge) {
+      badge.classList.remove('updated');
+      void badge.offsetWidth; // Trigger CSS reflow to replay pulse
+      badge.classList.add('updated');
+      setTimeout(() => badge.classList.remove('updated'), 1500);
+    }
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -394,6 +429,23 @@ async function fetchData() {
         lastUpdate: specUpd,
       };
 
+      // Seed historical records from server if local session has no prior logs
+      if (STATE.historyLogs.length <= 1 && Array.isArray(spec.history) && spec.history.length > 0) {
+        STATE.historyLogs = spec.history.slice(-30).map(h => ({
+          timestamp: h.timestamp || Date.now(),
+          label: h.label || (h.time ? h.time.substring(11, 19) : ''),
+          time: h.time || '',
+          site: h.site || 'Site 4 - ICT401',
+          pm25: parseFloat(h.pm25 || 0),
+          pm10: parseFloat(h.pm10 || 0),
+          co2: parseFloat(h.co2 || 0),
+          temp: parseFloat(h.temp || 0),
+          humid: parseFloat(h.humid || 0),
+          evoc: parseFloat(h.evoc || 0),
+          rssi: String(h.rssi || '0'),
+        }));
+      }
+
       // Continuously append each live reading to session history based on machine time
       appendHistory(STATE.site4Data);
 
@@ -411,6 +463,7 @@ async function fetchData() {
 }
 
 async function realFetchSite4() {
+  // 1. Primary: fetch from current server proxy.php
   try {
     const res = await fetch(CONFIG.specDataUrl);
     const json = await res.json();
@@ -418,11 +471,47 @@ async function realFetchSite4() {
       if (json.error === 'session_expired') {
         setConnected(false);
         showToast('Session หมดอายุ กรุณา Login ใหม่', 'error', 5000);
-      } else { console.warn('[getSpecData]', json.error, json.raw ?? ''); }
-      return null;
+      } else {
+        console.warn('[getSpecData]', json.error, json.raw ?? '');
+      }
+    } else if (!json.fallback) {
+      return json; // Live server data directly from emtrontech
     }
-    return json;
-  } catch (e) { console.error('[getSpecData] fetch error:', e); return null; }
+  } catch (e) {
+    console.warn('[getSpecData] Local server fetch error:', e);
+  }
+
+  // 2. Secondary: If running on a restricted intranet VM (10.7.x.x) where outbound cURL is blocked,
+  // fallback to fetching through our live cloud endpoint on great-site.net
+  try {
+    const cloudUrl = 'http://air-ict401.great-site.net/proxy.php?action=getSpecData&site=4&siteType=4';
+    const cloudRes = await fetch(cloudUrl, { signal: AbortSignal.timeout(6000) });
+    if (cloudRes.ok) {
+      const cloudJson = await cloudRes.json();
+      if (cloudJson.ok && (cloudJson.temp || cloudJson.co2 || cloudJson.pm25)) {
+        // Sync the live data back into the local server's cache
+        try {
+          fetch('proxy.php?action=pushData', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cloudJson),
+          });
+        } catch (pushErr) {}
+        return cloudJson;
+      }
+    }
+  } catch (cloudErr) {
+    console.warn('[getSpecData] Cloud bridge fallback error:', cloudErr);
+  }
+
+  // 3. Fallback: Return whatever local server has if cloud is also unreachable
+  try {
+    const res = await fetch(CONFIG.specDataUrl);
+    const json = await res.json();
+    if (json.ok) return json;
+  } catch (e) {}
+
+  return null;
 }
 
 async function mockFetchSite4() {
