@@ -414,6 +414,10 @@ function getSiteData(): void {
 }
 
 function ensureAiirAuthenticated(): void {
+    global $cookieFile;
+    // Wipe stale cookie file so cURL starts with a clean slate
+    if (file_exists($cookieFile)) @unlink($cookieFile);
+
     // 1. Visit login.php to obtain initial session cookie
     makeCurl(AIIR_BASE . 'login.php', [], [
         'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
