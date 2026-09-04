@@ -169,6 +169,18 @@
         </div>
       </div>
 
+      <!-- Main View Navigation Tabs -->
+      <div class="view-nav-tabs">
+        <button class="view-nav-btn active" id="tabBtnOverview" onclick="switchMainView('overview')">
+          <span>🏠 แดชบอร์ดสด &amp; มาตรวัด</span>
+          <span class="tab-badge">LIVE</span>
+        </button>
+        <button class="view-nav-btn" id="tabBtnAnalytics" onclick="switchMainView('analytics')">
+          <span>📈 กราฟวิเคราะห์แนวโน้มอย่างละเอียด</span>
+          <span class="tab-badge" id="pointsCountBadge">0 จุด</span>
+        </button>
+      </div>
+
       <!-- Main Panel: SITE 4 ICT 401 -->
       <div class="room-panel active" id="panel-site4">
 
@@ -314,22 +326,155 @@
 
         </div>
 
-        <!-- Historical Trend Chart with Time Range Filter -->
-        <div class="glass-panel chart-panel">
-          <div class="chart-header-row">
-            <div class="section-header-no-margin">📈 แนวโน้มคุณภาพอากาศ</div>
-            <div class="chart-time-filter" id="chartTimeFilter">
-              <button class="time-filter-btn active" id="tf-all" onclick="setTimeFilter('all')">📊 ทั้งหมดในรอบ
-                Login</button>
-              <button class="time-filter-btn" id="tf-15m" onclick="setTimeFilter('15m')">⏱️ 15 นาที</button>
-              <button class="time-filter-btn" id="tf-30m" onclick="setTimeFilter('30m')">⏱️ 30 นาที</button>
-              <button class="time-filter-btn" id="tf-1h" onclick="setTimeFilter('1h')">⏱️ 1 ชั่วโมง</button>
+      </div>
+
+      <!-- Dedicated Analytics View Panel -->
+      <div class="room-panel" id="panel-analytics" style="display:none;">
+        
+        <!-- Session Status & Control Bar -->
+        <div class="glass-panel session-control-bar">
+          <div class="session-info-group">
+            <div class="session-pulse-indicator">
+              <span class="pulse-ring"></span>
+              <span class="pulse-center"></span>
+            </div>
+            <div>
+              <div class="session-time-label">⏱️ ระยะเวลาที่มอนิเตอร์ในรอบนี้ (Session Uptime)</div>
+              <div class="session-time-val" id="sessionStopwatch">00:00:00</div>
+            </div>
+            <div class="session-meta-pill">
+              <span id="sessionPointsCount">0 จุดข้อมูล</span>
             </div>
           </div>
-          <div class="chart-wrap">
-            <canvas id="trendChart"></canvas>
+
+          <div class="session-actions-group">
+            <button class="btn-session-action" onclick="resetSessionPrompt()" title="เริ่มนับรอบเวลาและล้างแคชกราฟรอบใหม่">
+              🔄 เริ่มนับรอบใหม่
+            </button>
+            <button class="btn-session-action btn-session-primary" onclick="downloadCSV()" title="ดาวน์โหลดประวัติข้อมูลเป็น CSV">
+              📥 ดาวน์โหลด CSV
+            </button>
           </div>
         </div>
+
+        <!-- Metric Statistics Cards (Summary Cards) -->
+        <div class="analytics-stat-grid">
+          <!-- Card 1: PM2.5 -->
+          <div class="glass-panel stat-card">
+            <div class="stat-card-header">
+              <span class="stat-icon-wrap icon-teal">🌫️</span>
+              <span class="stat-card-name">PM2.5 สถิติในรอบนี้</span>
+            </div>
+            <div class="stat-card-body">
+              <div class="stat-main-metric">
+                <span class="stat-main-num" id="stat-pm25-avg">—</span>
+                <span class="stat-main-unit">µg/m³ (เฉลี่ย)</span>
+              </div>
+              <div class="stat-sub-row">
+                <span>สูงสุด: <strong id="stat-pm25-max">—</strong></span>
+                <span>ต่ำสุด: <strong id="stat-pm25-min">—</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: PM10 -->
+          <div class="glass-panel stat-card">
+            <div class="stat-card-header">
+              <span class="stat-icon-wrap icon-cyan">💨</span>
+              <span class="stat-card-name">PM10 สถิติในรอบนี้</span>
+            </div>
+            <div class="stat-card-body">
+              <div class="stat-main-metric">
+                <span class="stat-main-num" id="stat-pm10-avg">—</span>
+                <span class="stat-main-unit">µg/m³ (เฉลี่ย)</span>
+              </div>
+              <div class="stat-sub-row">
+                <span>สูงสุด: <strong id="stat-pm10-max">—</strong></span>
+                <span>ต่ำสุด: <strong id="stat-pm10-min">—</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: CO2 -->
+          <div class="glass-panel stat-card">
+            <div class="stat-card-header">
+              <span class="stat-icon-wrap icon-blue">☁️</span>
+              <span class="stat-card-name">CO2 สถิติในรอบนี้</span>
+            </div>
+            <div class="stat-card-body">
+              <div class="stat-main-metric">
+                <span class="stat-main-num" id="stat-co2-avg">—</span>
+                <span class="stat-main-unit">ppm (เฉลี่ย)</span>
+              </div>
+              <div class="stat-sub-row">
+                <span>สูงสุด: <strong id="stat-co2-max">—</strong></span>
+                <span>ต่ำสุด: <strong id="stat-co2-min">—</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4: Climate -->
+          <div class="glass-panel stat-card">
+            <div class="stat-card-header">
+              <span class="stat-icon-wrap icon-orange">🌡️</span>
+              <span class="stat-card-name">อุณหภูมิ &amp; ความชื้นเฉลี่ย</span>
+            </div>
+            <div class="stat-card-body">
+              <div class="stat-main-metric">
+                <span class="stat-main-num" id="stat-temp-avg">—</span>
+                <span class="stat-main-unit">°C / <span id="stat-humid-avg">—</span>%</span>
+              </div>
+              <div class="stat-sub-row">
+                <span>Temp สูงสุด: <strong id="stat-temp-max">—</strong></span>
+                <span>Humid สูงสุด: <strong id="stat-humid-max">—</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Unified Air Analytics Interactive Chart -->
+        <div class="unified-chart-card">
+          <div class="unified-chart-header">
+            <div class="unified-chart-title-wrap">
+              <div class="unified-chart-title">
+                <span>📈 กราฟวิเคราะห์แนวโน้มคุณภาพอากาศรวม (Unified Air Analytics)</span>
+              </div>
+              <div class="unified-chart-sub">
+                บันทึกตามเวลาเครื่องคอมพิวเตอร์นับตั้งแต่เข้าสู่ระบบ | คลิกที่ปุ่มเพื่อเปิด-ปิดแสดงผลแต่ละตัวแปร
+              </div>
+            </div>
+
+            <!-- Interactive Metric Toggle Buttons -->
+            <div class="metric-toggle-group" id="metricToggleGroup">
+              <button class="metric-toggle-pill pill-all active" id="toggle-all" onclick="toggleAllMetrics()" title="คลิกเพื่อแสดง/ซ่อนทั้งหมด">
+                <span class="toggle-check" id="chk-all">✓</span> แสดงทั้งหมด
+              </button>
+              <button class="metric-toggle-pill pill-pm25 active" id="toggle-pm25" onclick="toggleMetric('pm25')" title="ฝุ่นละออง PM2.5">
+                <span class="toggle-check" id="chk-pm25">✓</span> 🌫️ PM2.5
+              </button>
+              <button class="metric-toggle-pill pill-pm10 active" id="toggle-pm10" onclick="toggleMetric('pm10')" title="ฝุ่นละออง PM10">
+                <span class="toggle-check" id="chk-pm10">✓</span> 💨 PM10
+              </button>
+              <button class="metric-toggle-pill pill-co2 active" id="toggle-co2" onclick="toggleMetric('co2')" title="ก๊าซคาร์บอนไดออกไซด์ CO2">
+                <span class="toggle-check" id="chk-co2">✓</span> ☁️ CO2
+              </button>
+              <button class="metric-toggle-pill pill-temp active" id="toggle-temp" onclick="toggleMetric('temp')" title="อุณหภูมิห้อง">
+                <span class="toggle-check" id="chk-temp">✓</span> 🌡️ Temp
+              </button>
+              <button class="metric-toggle-pill pill-humid active" id="toggle-humid" onclick="toggleMetric('humid')" title="ความชื้นสัมพัทธ์">
+                <span class="toggle-check" id="chk-humid">✓</span> 💧 Humid
+              </button>
+              <button class="metric-toggle-pill pill-evoc active" id="toggle-evoc" onclick="toggleMetric('evoc')" title="สารระเหยอินทรีย์ EVOC">
+                <span class="toggle-check" id="chk-evoc">✓</span> 🧪 EVOC
+              </button>
+            </div>
+          </div>
+
+          <div class="unified-chart-canvas-wrap">
+            <canvas id="analyticsMainChart"></canvas>
+          </div>
+        </div>
+
       </div>
 
       <!-- Draggable Floating AI Assistant Button -->

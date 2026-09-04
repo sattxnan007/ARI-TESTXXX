@@ -81,33 +81,32 @@ c:\Users\tn_setthanan\Desktop\Copy\
 
 ---
 
-### 3.2 `proxy.php` (ส่วน Backend API Proxy & Authentication)
+### 3.2 `proxy.php` (ส่วน Backend API Proxy, Smart Routing & Authentication)
 
-[proxy.php](file:///c:/Users/tn_setthanan/Desktop/Copy/proxy.php) ทำหน้าที่เป็นตัวกลาง (Middleware/Proxy) ระหว่างหน้าเว็บเบราว์เซอร์กับ **Emtrontech AIIR API Server** เพื่อแก้ปัญหา CORS, จัดการ Session Cookie Jar, รวมถึงระบบ **Server-Side Cache (5s TTL)** และ **Anti-DoS Rate Limiter** ป้องกันการยิงสแปม API
+[proxy.php](file:///c:/Users/tn_setthanan/Desktop/Copy/proxy.php) ทำหน้าที่เป็นตัวกลาง (Middleware/Proxy) ระหว่างหน้าเว็บเบราว์เซอร์กับ **Emtrontech AIIR API Server** ออกแบบใหม่รองรับทั้ง **เซิร์ฟเวอร์ VM ภายในองค์กร** (ผ่าน Corporate Proxy อัตโนมัติ) และ **เซิร์ฟเวอร์เน็ตนอก/Cloud** (ผ่าน Direct Connection) อย่างเสถียร 100%
 
 #### โครงสร้างและการทำงานภายในไฟล์:
-1. **Anti-DoS Rate Limiter (`checkRateLimit()`)**:
-   - จำกัดจำนวนคำขอต่อ IP แอดเดรสสูงสุด **60 ครั้งต่อนาที** (`RATE_LIMIT_MAX = 60`)
-   - หากยิงคำขอถี่เกินเกณฑ์ ระบบจะตอบกลับด้วย **HTTP Status 429 Too Many Requests** ป้องกันการโจมตีเว็บ (Denial of Service)
+1. **Smart Route Detection & Persistence (`getCandidateRoutes()`, `saveCachedRoute()`)**:
+   - **เซิร์ฟเวอร์เน็ตนอก (Cloud/Direct)**: เชื่อมต่อไปยัง `https://emtrontech.com` ได้โดยตรง ไม่ต้องผ่าน Proxy
+   - **เซิร์ฟเวอร์ VM ภายในองค์กร (10.x.x.x)**: ไฟร์วอลล์บล็อกพอร์ต 443 ขาออกตรง ระบบจะตรวจจับและวิ่งผ่าน Corporate Proxy (`10.7.21.17:8080`, `ssproxy.boonrawd.co.th:8080`) หรือ Environment Variables (`HTTP_PROXY`, `http_proxy`) อัตโนมัติ
+   - **Route Caching (5 นาที)**: เมื่อทดสอบพบเส้นทางที่เชื่อมต่อได้สำเร็จ ระบบจะจดจำเส้นทางที่ใช้งานได้ไว้ในไฟล์แคชชั่วคราว (`/tmp/aiir_active_route.json`) ทำให้ Request ถัดไปยิงได้ทันทีโดยไม่ต้องเสียเวลา Probe ทุกครั้ง
+   - **Adaptive Failover**: หากเส้นทางเดิมสะดุด ระบบจะสลับเส้นทางสำรอง (Direct <-> Proxy) ให้อัตโนมัติทันที
 
-2. **Server-Side Cache System (`getFromCache()`, `saveToCache()`)**:
-   - บันทึกผลลัพธ์ข้อมูลจาก API ลงไฟล์แคชชั่วคราว มีอายุ **5 วินาที** (`CACHE_TTL = 5`)
-   - **ข้อดี**: แม้มีผู้ใช้รีเฟรชหน้าจอ 100 ครั้งภายใน 5 วินาที ระบบจะยิง cURL ออกไปหาเซิร์ฟเวอร์หลักเพียง **1 ครั้งเท่านั้น** ส่วนที่เหลือจะตอบกลับจากแคชทันที (ความเร็วตอบกลับ ~1ms) ป้องกันการโดนแบน IP จากเซิร์ฟเวอร์หลัก
+2. **Direct Single-Call Telemetry (`handleGetSpecData()`)**:
+   - ยิงคำขอไปยัง `getSpecSiteData.php` ด้วย `POST site=4&siteType=4` เพียงครั้งเดียว ได้ JSON สดทันที โดยไม่ต้องโหลดหน้า HTML ซ้ำซ้อน และไม่ต้องใช้คุกกี้ล็อกอิน
+   - ลดเวลาตอบสนองจาก 3-8 วินาที เหลือเพียง ~300-500ms
 
-3. **Server-Side File History Store (`saveHistoryRecord()`, `getHistoryRecords()`)**:
-   - บันทึกประวัติข้อมูลเซ็นเซอร์ย้อนหลังลงในไฟล์ JSON ชั่วคราวบนเซิร์ฟเวอร์ (`/tmp/aiir_history_ict401.json`)
-   - **ข้อดี**: ไม่ต้องพึ่งพาฐานข้อมูลหนัก (เช่น MySQL/MongoDB) แต่คงเก็บข้อมูลย้อนหลังได้สูงสุด **2,000 จุด (~16 ชั่วโมง)** โดยใช้ระบบ Sliding Window ป้องกันไม่ให้ไฟล์มีขนาดใหญ่เกินไป
-   - เมื่อกด F5 หรือเปิดหน้าเว็บจากอุปกรณ์อื่น กราฟเส้นแนวโน้มย้อนหลังจะโหลดข้อมูลที่เซิร์ฟเวอร์สะสมไว้ออกมาแสดงผลได้ทันที
+3. **Anti-DoS Rate Limiter พร้อม Private Subnet Whitelist (`checkRateLimit()`)**:
+   - ยกเว้นการจำกัดอัตราคำขอ (Whitelist) สำหรับ Localhost (`127.0.0.1`, `::1`) และ Private Subnets (`10.*`, `172.16-31.*`, `192.168.*`) เพื่อป้องกันไม่ให้การ Auto-refresh หรือการเปิดหลายแท็บบนเซิร์ฟเวอร์ VM ถูกตัดเป็น HTTP 429
+   - เพิ่มเพดานคำขอสำหรับ IP ทั่วไปเป็น 300 ครั้งต่อนาที
 
-4. **Server-Side 45-Minute File Cache Logger (`cache_45m_ict401.json`)**:
-   - `save45MinCacheRecord($data)`: บันทึกข้อมูลสภาพแวดล้อมลงในไฟล์ `cache_45m_ict401.json` ทุกๆ 45 นาทีอัตโนมัติ โดยไม่ต้องใช้ฐานข้อมูล (Database-Free File Caching)
-   - `get45MinCacheRecords()`: อ่านประวัติย้อนหลังทุกๆ 45 นาทีส่งกลับไปยัง UI เพื่อนำไปพล็อตบนกราฟเส้นแนวโน้มย้อนหลัง (`tf-45m`)
-   - `getSpecData()`: แนบอาร์เรย์ `history45m` กลับไปยังไคลเอนต์พร้อมกับข้อมูล Realtime
-   - `get45MinHistory`: API Action Router เพิ่มเติมสำหรับดึงไฟล์แคช 45 นาทีโดยเฉพาะ
-5. **Action Router & Helper Functions (`makeCurl()`, `doLogin()`, `checkSession()`, `getSpecData()`, `getHistory()`, `doLogout()`)**:
-   - `checkSession()`: ตรวจสอบสถานะการเข้าสู่ระบบในเซสชัน PHP และส่งกลับสถานะ `loggedIn` พร้อมชื่อบัญชีผู้ใช้เมื่อมีการรีเฟรชหน้าจอ (F5)
-   - `getSpecData()`: ดึงข้อมูลเฉพาะห้อง SITE 4 ICT 401 แนบอาร์เรย์ประวัติ `history` และ `history45m` จากไฟล์แคชเซิร์ฟเวอร์ส่งกลับไปยังเบราว์เซอร์
-   - `clearAllCache()`: ล้างแคชคำตอบทั้งหมดทันทีที่มีการ Login ใหม่ หรือ Logout ออกจากระบบ
+4. **Server Diagnostic Mode (`?action=diag`)**:
+   - Endpoint สำหรับตรวจสอบและวินิจฉัยสุขภาพเครือข่ายของเซิร์ฟเวอร์ รายงานผลแบบ JSON ประกอบด้วยสถานะการต่อตรง, สถานะการต่อผ่าน Proxy แต่ละตัว, เวลา Latency, ข้อมูลสภาพแวดล้อม และสิทธิ์การเขียนไฟล์
+
+5. **Server-Side Cache & History Logger**:
+   - **5s Telemetry Cache**: แคชผลลัพธ์ 5 วินาที ลดภาระเซิร์ฟเวอร์ปลายทาง
+   - **History Store**: บันทึกประวัติข้อมูลเซ็นเซอร์ย้อนหลัง 2,000 จุด (~16 ชั่วโมง) ลงใน `aiir_history_ict401.json`
+   - **45-Minute Cache**: บันทึกสแนปช็อตระยะยาวลงใน `cache_45m_ict401.json` พร้อมคำนวณ AI IAQ Score (0-100%)
 
 ---
 

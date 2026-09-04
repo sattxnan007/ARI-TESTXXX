@@ -28,7 +28,8 @@ const STATE = {
   isLoggedIn: false,
   username: '',
   sessionStartTime: null,
-  timeFilter: 'all',
+  sessionTimerInterval: null,
+  currentMainView: 'overview',
   site4Data: null,
   historyLogs: [],
   historyPM25: [],
@@ -36,7 +37,15 @@ const STATE = {
   historyTemp: [],
   historyLabels: [],
   autoRefreshTimer: null,
-  trendChart: null,
+  analyticsMainChart: null,
+  activeMetrics: {
+    pm25: true,
+    pm10: true,
+    co2: true,
+    temp: true,
+    humid: true,
+    evoc: true,
+  },
   gaugeCharts: { pm10: null, co2: null, temp: null, humid: null },
   soundAlertEnabled: true,
 };
@@ -242,19 +251,8 @@ function setConnected(on, username = '') {
     const sb = $('sidebar');
     if (sb) sb.classList.remove('open');
 
-    // Initialize clean session timeline from login time
-    if (!STATE.sessionStartTime) {
-      STATE.sessionStartTime = Date.now();
-      STATE.historyLogs = [];
-      STATE.historyLabels = [];
-      STATE.historyPM25 = [];
-      STATE.historyCO2 = [];
-      STATE.historyTemp = [];
-      if (STATE.trendChart) {
-        STATE.trendChart.destroy();
-        STATE.trendChart = null;
-      }
-    }
+    // Initialize machine-level session tracking & cache
+    initSessionTracking();
 
     showDashboard();
     if ($('autoRefreshToggle')?.checked) {
@@ -263,16 +261,11 @@ function setConnected(on, username = '') {
   } else {
     stopAutoRefresh();
     STATE.username = '';
-    STATE.sessionStartTime = null;
-    STATE.historyLogs = [];
-    STATE.historyLabels = [];
-    STATE.historyPM25 = [];
-    STATE.historyCO2 = [];
-    STATE.historyTemp = [];
-    if (STATE.trendChart) {
-      STATE.trendChart.destroy();
-      STATE.trendChart = null;
+    if (STATE.sessionTimerInterval) {
+      clearInterval(STATE.sessionTimerInterval);
+      STATE.sessionTimerInterval = null;
     }
+    destroyAllCharts();
     localStorage.removeItem('aiir_user');
 
     if (badge) badge.className = 'status-badge badge-offline';
@@ -284,6 +277,9 @@ function setConnected(on, username = '') {
     toggleEl('topbarUserArea', false);
 
     document.body.classList.remove('sidebar-collapsed');
+    clearAlertCardPulses();
+    dismissAlertBanner();
+    closeAlertModal();
     hideDashboard();
     stopAutoRefresh();
   }
@@ -429,23 +425,6 @@ async function fetchData() {
         lastUpdate: specUpd,
       };
 
-      // Seed historical records from server if local session has no prior logs
-      if (STATE.historyLogs.length <= 1 && Array.isArray(spec.history) && spec.history.length > 0) {
-        STATE.historyLogs = spec.history.slice(-30).map(h => ({
-          timestamp: h.timestamp || Date.now(),
-          label: h.label || (h.time ? h.time.substring(11, 19) : ''),
-          time: h.time || '',
-          site: h.site || 'Site 4 - ICT401',
-          pm25: parseFloat(h.pm25 || 0),
-          pm10: parseFloat(h.pm10 || 0),
-          co2: parseFloat(h.co2 || 0),
-          temp: parseFloat(h.temp || 0),
-          humid: parseFloat(h.humid || 0),
-          evoc: parseFloat(h.evoc || 0),
-          rssi: String(h.rssi || '0'),
-        }));
-      }
-
       // Continuously append each live reading to session history based on machine time
       appendHistory(STATE.site4Data);
 
@@ -463,55 +442,30 @@ async function fetchData() {
 }
 
 async function realFetchSite4() {
-  // 1. Primary: fetch from current server proxy.php
   try {
     const res = await fetch(CONFIG.specDataUrl);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
     const json = await res.json();
-    if (!json.ok) {
+    if (json.ok) {
+      if (json.fallback) {
+        console.info('[getSpecData] Using latest cached telemetry snapshot (route: ' + (json.route || 'cached') + ')');
+      }
+      return json;
+    } else {
       if (json.error === 'session_expired') {
         setConnected(false);
         showToast('Session หมดอายุ กรุณา Login ใหม่', 'error', 5000);
       } else {
-        console.warn('[getSpecData]', json.error, json.raw ?? '');
+        console.warn('[getSpecData]', json.error);
       }
-    } else if (!json.fallback) {
-      return json; // Live server data directly from emtrontech
+      return null;
     }
   } catch (e) {
-    console.warn('[getSpecData] Local server fetch error:', e);
+    console.error('[getSpecData] Fetch error:', e);
+    return null;
   }
-
-  // 2. Secondary: If running on a restricted intranet VM (10.7.x.x) where outbound cURL is blocked,
-  // fallback to fetching through our live cloud endpoint on great-site.net
-  try {
-    const cloudUrl = 'http://air-ict401.great-site.net/proxy.php?action=getSpecData&site=4&siteType=4';
-    const cloudRes = await fetch(cloudUrl, { signal: AbortSignal.timeout(6000) });
-    if (cloudRes.ok) {
-      const cloudJson = await cloudRes.json();
-      if (cloudJson.ok && (cloudJson.temp || cloudJson.co2 || cloudJson.pm25)) {
-        // Sync the live data back into the local server's cache
-        try {
-          fetch('proxy.php?action=pushData', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(cloudJson),
-          });
-        } catch (pushErr) {}
-        return cloudJson;
-      }
-    }
-  } catch (cloudErr) {
-    console.warn('[getSpecData] Cloud bridge fallback error:', cloudErr);
-  }
-
-  // 3. Fallback: Return whatever local server has if cloud is also unreachable
-  try {
-    const res = await fetch(CONFIG.specDataUrl);
-    const json = await res.json();
-    if (json.ok) return json;
-  } catch (e) {}
-
-  return null;
 }
 
 async function mockFetchSite4() {
@@ -537,26 +491,20 @@ async function mockFetchSite4() {
 }
 
 // ──────────────────────────────────────────────
-// Time filter & History tracking (Synced with local machine time)
+// History tracking (Synced with local machine time)
 // ──────────────────────────────────────────────
-function setTimeFilter(mode) {
-  STATE.timeFilter = mode;
-  ['tf-all', 'tf-15m', 'tf-30m', 'tf-1h'].forEach(id => {
-    const btn = $(id);
-    if (btn) btn.classList.toggle('active', id === `tf-${mode}`);
-  });
-  updateTrendChart();
-  const label = { '15m': '15 นาทีล่าสุด', '30m': '30 นาทีล่าสุด', '1h': '1 ชั่วโมงล่าสุด' }[mode] || 'ทั้งหมดในรอบ Login';
-  showToast(`📊 แสดงกราฟช่วงเวลา: ${label}`, 'info', 2000);
-}
 
 function appendHistory(data) {
   if (!data) return;
   const nowTs = Date.now();
   const label = new Date(nowTs).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const pm25Val = parseFloat(data['PM2.5'] ?? data.pm25 ?? 0);
+  const pm10Val = parseFloat(data['PM10'] ?? data.pm10 ?? 0);
   const co2Val = parseFloat(data.CO2 ?? data.co2 ?? 0);
   const tempVal = parseFloat(data.temp ?? 0);
+  const humidVal = parseFloat(data.humid ?? 0);
+  const evocVal = parseFloat(data.evoc ?? 0);
+  const rssiVal = String(data.RSSI ?? data.rssi ?? '0');
 
   // Prevent duplicate addition if called within 2 seconds
   const lastEntry = STATE.historyLogs[STATE.historyLogs.length - 1];
@@ -564,7 +512,7 @@ function appendHistory(data) {
     return;
   }
 
-  const push = (arr, val) => { arr.push(val ?? 0); if (arr.length > 300) arr.shift(); };
+  const push = (arr, val) => { arr.push(val ?? 0); if (arr.length > 500) arr.shift(); };
   push(STATE.historyLabels, label);
   push(STATE.historyPM25, pm25Val);
   push(STATE.historyCO2, co2Val);
@@ -576,15 +524,26 @@ function appendHistory(data) {
     time: `${new Date(nowTs).toLocaleDateString('th-TH')} ${label}`,
     site: 'Site 4 - ICT401',
     pm25: pm25Val,
-    pm10: parseFloat(data['PM10'] ?? data.pm10 ?? 0),
+    pm10: pm10Val,
     co2: co2Val,
     temp: tempVal,
-    humid: parseFloat(data.humid ?? 0),
-    evoc: parseFloat(data.evoc ?? 0),
-    rssi: String(data.RSSI ?? data.rssi ?? '0'),
+    humid: humidVal,
+    evoc: evocVal,
+    rssi: rssiVal,
   });
-  if (STATE.historyLogs.length > 300) STATE.historyLogs.shift();
-  updateTrendChart();
+
+  if (STATE.historyLogs.length > 500) STATE.historyLogs.shift();
+
+  // Save to persistent device cache
+  try {
+    localStorage.setItem(SESSION_CACHE_KEYS.chartLogs, JSON.stringify(STATE.historyLogs));
+  } catch (e) {
+    console.warn('[Cache] Storage quota or write error:', e);
+  }
+
+  updateSessionStopwatch();
+  updateAnalyticsStats();
+  updateAllCharts();
 }
 
 // ──────────────────────────────────────────────
@@ -742,35 +701,79 @@ function toggleSoundAlert() {
     if (txt) txt.textContent = 'ระบบแจ้งเตือน: เปิด';
     if (btn) btn.classList.remove('muted');
     showToast('🔔 เปิดระบบแจ้งเตือนและ Pop-Up เรียบร้อยแล้ว', 'info');
+    restoreRealAlertCardState();
   } else {
     if (icon) icon.textContent = '🔕';
     if (txt) txt.textContent = 'ระบบแจ้งเตือน: ปิด';
     if (btn) btn.classList.add('muted');
     showToast('🔕 ปิดระบบแจ้งเตือนและ Pop-Up แล้ว', 'info');
+    clearAlertCardPulses();
+    dismissAlertBanner();
+    closeAlertModal();
   }
+}
+
+function clearAlertCardPulses() {
+  ['pm25', 'pm10', 'co2', 'temp', 'humid', 'evoc'].forEach(k => {
+    const card = $(`mc-${k}`);
+    if (card) card.classList.remove('card-alert-pulse');
+  });
+}
+
+function restoreRealAlertCardState() {
+  if (!STATE.soundAlertEnabled || !STATE.site4Data) {
+    clearAlertCardPulses();
+    return;
+  }
+  const d = STATE.site4Data;
+  const pm25 = parseFloat(d['PM2.5'] ?? d.pm25 ?? 0);
+  const pm10 = parseFloat(d.PM10 ?? d.pm10 ?? 0);
+  const co2 = parseFloat(d.CO2 ?? d.co2 ?? 0);
+  const temp = parseFloat(d.temp ?? 0);
+  const humid = parseFloat(d.humid ?? 0);
+  const evoc = parseFloat(d.evoc ?? 0);
+  const values = { pm25, pm10, co2, temp, humid, evoc };
+
+  ['pm25', 'pm10', 'co2', 'temp', 'humid', 'evoc'].forEach(k => {
+    const card = $(`mc-${k}`);
+    const threshold = CONFIG.thresholds[k];
+    const isAlert = threshold !== undefined && values[k] > threshold;
+    if (card) card.classList.toggle('card-alert-pulse', isAlert);
+  });
 }
 
 function dismissAlertBanner() {
   const banner = $('alertBannerWrap');
   if (banner) { banner.setAttribute('hidden', 'true'); banner.style.display = 'none'; }
+  restoreRealAlertCardState();
 }
 
 function closeAlertModal() {
   const modal = $('alertModalOverlay');
   if (modal) { modal.setAttribute('hidden', 'true'); modal.style.display = 'none'; }
+  restoreRealAlertCardState();
 }
 
 // Test trigger for Emergency Alert Pop-Up Modal
 function testAlertModal() {
   checkAirQualityAlerts(48.5, 112.0, 1250, 31.5, 74.0, 65, true);
   showToast('🧪 แสดงผล Pop-Up แจ้งเตือนฉุกเฉินระดับอันตราย (Test Mode)', 'info', 3500);
+  // Automatically restore card border states after 8 seconds if user leaves modal open
+  setTimeout(() => {
+    restoreRealAlertCardState();
+  }, 8000);
 }
 
 // ──────────────────────────────────────────────
 // Air Quality Threshold Alerts Check (data-driven)
 // ──────────────────────────────────────────────
 function checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc, isTest = false) {
-  if (!STATE.soundAlertEnabled && !isTest) { dismissAlertBanner(); closeAlertModal(); return; }
+  if (!STATE.soundAlertEnabled && !isTest) {
+    dismissAlertBanner();
+    closeAlertModal();
+    clearAlertCardPulses();
+    return;
+  }
 
   const values = { pm25, pm10, co2, temp, humid, evoc };
   const alerts = [], alertDetails = [], alertCards = {};
@@ -993,7 +996,6 @@ function initAIFloatingWidget() {
     btn.style.bottom = 'auto';
     return { x: clampedX, y: clampedY };
   }
-
   // Restore saved position if available
   try {
     const saved = localStorage.getItem('ai_widget_pos');
@@ -1062,7 +1064,7 @@ function initAIFloatingWidget() {
       const pos = clampAndSetPos(rect.left, rect.top);
       try {
         localStorage.setItem('ai_widget_pos', JSON.stringify(pos));
-      } catch (err) {}
+      } catch (err) { }
     } else {
       // It was a click!
       openAIModal();
@@ -1087,8 +1089,482 @@ function initAIFloatingWidget() {
 }
 
 // ──────────────────────────────────────────────
-// Semi-circle gauge charts
+// Machine Reboot & Session Cache Engine
 // ──────────────────────────────────────────────
+const SESSION_CACHE_KEYS = {
+  powerActive: 'aiir_power_session_active',
+  startTime: 'aiir_session_start_time',
+  chartLogs: 'aiir_session_chart_logs',
+};
+
+function initSessionTracking() {
+  const isPowerActive = sessionStorage.getItem(SESSION_CACHE_KEYS.powerActive);
+
+  if (!isPowerActive) {
+    // Machine rebooted / fresh browser power session!
+    // Start fresh count from 0, clear old cached chart logs
+    const now = Date.now();
+    sessionStorage.setItem(SESSION_CACHE_KEYS.powerActive, String(now));
+    localStorage.setItem(SESSION_CACHE_KEYS.startTime, String(now));
+    localStorage.removeItem(SESSION_CACHE_KEYS.chartLogs);
+
+    STATE.sessionStartTime = now;
+    STATE.historyLogs = [];
+    STATE.historyLabels = [];
+    STATE.historyPM25 = [];
+    STATE.historyCO2 = [];
+    STATE.historyTemp = [];
+    console.info('[Session] Fresh machine session initialized at', new Date(now).toLocaleTimeString());
+  } else {
+    // Machine still active (re-login or page refresh on same machine)!
+    // Restore session start time & cached chart data without restarting counter!
+    const savedStart = parseInt(localStorage.getItem(SESSION_CACHE_KEYS.startTime), 10);
+    STATE.sessionStartTime = savedStart && !isNaN(savedStart) ? savedStart : Date.now();
+
+    try {
+      const cached = JSON.parse(localStorage.getItem(SESSION_CACHE_KEYS.chartLogs) || '[]');
+      if (Array.isArray(cached) && cached.length > 0) {
+        STATE.historyLogs = cached;
+        STATE.historyLabels = cached.map(l => l.label);
+        STATE.historyPM25 = cached.map(l => l.pm25);
+        STATE.historyCO2 = cached.map(l => l.co2);
+        STATE.historyTemp = cached.map(l => l.temp);
+        console.info('[Session] Resumed machine session from cache (' + cached.length + ' data points restored)');
+      }
+    } catch (e) {
+      console.warn('[Session] Failed to restore chart cache:', e);
+    }
+  }
+
+  // Start stopwatch timer
+  if (STATE.sessionTimerInterval) clearInterval(STATE.sessionTimerInterval);
+  STATE.sessionTimerInterval = setInterval(updateSessionStopwatch, 1000);
+  updateSessionStopwatch();
+  updateAnalyticsStats();
+  updateAllCharts();
+}
+
+function updateSessionStopwatch() {
+  if (!STATE.sessionStartTime) return;
+  const elapsedMs = Math.max(0, Date.now() - STATE.sessionStartTime);
+  const totalSec = Math.floor(elapsedMs / 1000);
+  const hours = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+  const minutes = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+  const seconds = String(totalSec % 60).padStart(2, '0');
+  const timeStr = `${hours}:${minutes}:${seconds}`;
+
+  const el = $('sessionStopwatch');
+  if (el) el.textContent = timeStr;
+
+  const countEl = $('sessionPointsCount');
+  if (countEl) countEl.textContent = `${STATE.historyLogs.length} จุดข้อมูล`;
+
+  const badgeEl = $('pointsCountBadge');
+  if (badgeEl) badgeEl.textContent = `${STATE.historyLogs.length} จุด`;
+}
+
+function resetSessionPrompt() {
+  if (confirm('คุณต้องการรีเซ็ตเวลาและเริ่มนับรอบบันทึกข้อมูลกราฟใหม่สำหรับรอบนี้ใช่หรือไม่?')) {
+    const now = Date.now();
+    sessionStorage.setItem(SESSION_CACHE_KEYS.powerActive, String(now));
+    localStorage.setItem(SESSION_CACHE_KEYS.startTime, String(now));
+    localStorage.removeItem(SESSION_CACHE_KEYS.chartLogs);
+
+    STATE.sessionStartTime = now;
+    STATE.historyLogs = [];
+    STATE.historyLabels = [];
+    STATE.historyPM25 = [];
+    STATE.historyCO2 = [];
+    STATE.historyTemp = [];
+
+    updateSessionStopwatch();
+    updateAnalyticsStats();
+    updateAllCharts();
+    showToast('🔄 รีเซ็ตเวลาและเริ่มนับรอบกราฟใหม่เรียบร้อยแล้ว', 'success');
+  }
+}
+
+function switchMainView(view) {
+  STATE.currentMainView = view;
+  const isOverview = view === 'overview';
+
+  const panelOverview = $('panel-site4');
+  const panelAnalytics = $('panel-analytics');
+  if (panelOverview) {
+    panelOverview.style.display = isOverview ? 'block' : 'none';
+    panelOverview.classList.toggle('active', isOverview);
+  }
+  if (panelAnalytics) {
+    panelAnalytics.style.display = isOverview ? 'none' : 'block';
+    panelAnalytics.classList.toggle('active', !isOverview);
+  }
+
+  const tabOverview = $('tabBtnOverview');
+  const tabAnalytics = $('tabBtnAnalytics');
+  if (tabOverview) tabOverview.classList.toggle('active', isOverview);
+  if (tabAnalytics) tabAnalytics.classList.toggle('active', !isOverview);
+
+  // Trigger reflow & redraw for the newly visible view
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      if (isOverview) {
+        if (STATE.site4Data) refreshGauges();
+        updateOverviewTrendChart();
+        if (STATE.trendChart) {
+          STATE.trendChart.resize();
+        }
+      } else {
+        updateAnalyticsStats();
+        updateAnalyticsMainChart();
+        if (STATE.analyticsMainChart) {
+          STATE.analyticsMainChart.resize();
+          STATE.analyticsMainChart.update('none');
+        }
+      }
+    }, 60);
+  });
+}
+
+function updateAnalyticsStats() {
+  const logs = STATE.historyLogs;
+  if (!logs || logs.length === 0) {
+    const d = STATE.site4Data;
+    if (d) {
+      const pm25 = parseFloat(d['PM2.5'] ?? 0);
+      const pm10 = parseFloat(d['PM10'] ?? 0);
+      const co2 = parseFloat(d.CO2 ?? 0);
+      const temp = parseFloat(d.temp ?? 0);
+      const humid = parseFloat(d.humid ?? 0);
+
+      const setT = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+      setT('stat-pm25-avg', pm25.toFixed(1));
+      setT('stat-pm25-max', pm25.toFixed(1));
+      setT('stat-pm25-min', pm25.toFixed(1));
+
+      setT('stat-pm10-avg', pm10.toFixed(1));
+      setT('stat-pm10-max', pm10.toFixed(1));
+      setT('stat-pm10-min', pm10.toFixed(1));
+
+      setT('stat-co2-avg', Math.round(co2));
+      setT('stat-co2-max', Math.round(co2));
+      setT('stat-co2-min', Math.round(co2));
+
+      setT('stat-temp-avg', temp.toFixed(1));
+      setT('stat-temp-max', `${temp.toFixed(1)}°C`);
+      setT('stat-humid-avg', humid.toFixed(1));
+      setT('stat-humid-max', `${max(humidArr).toFixed(1)}%`);
+    }
+    return;
+  }
+
+  const pm25Arr = logs.map(l => l.pm25);
+  const pm10Arr = logs.map(l => l.pm10);
+  const co2Arr = logs.map(l => l.co2);
+  const tempArr = logs.map(l => l.temp);
+  const humidArr = logs.map(l => l.humid);
+
+  const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  const max = arr => arr.length ? Math.max(...arr) : 0;
+  const min = arr => arr.length ? Math.min(...arr) : 0;
+
+  const setT = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+
+  setT('stat-pm25-avg', avg(pm25Arr).toFixed(1));
+  setT('stat-pm25-max', max(pm25Arr).toFixed(1));
+  setT('stat-pm25-min', min(pm25Arr).toFixed(1));
+
+  setT('stat-pm10-avg', avg(pm10Arr).toFixed(1));
+  setT('stat-pm10-max', max(pm10Arr).toFixed(1));
+  setT('stat-pm10-min', min(pm10Arr).toFixed(1));
+
+  setT('stat-co2-avg', Math.round(avg(co2Arr)));
+  setT('stat-co2-max', Math.round(max(co2Arr)));
+  setT('stat-co2-min', Math.round(min(co2Arr)));
+
+  setT('stat-temp-avg', avg(tempArr).toFixed(1));
+  setT('stat-temp-max', `${max(tempArr).toFixed(1)}°C`);
+  setT('stat-humid-avg', avg(humidArr).toFixed(1));
+  setT('stat-humid-max', `${max(humidArr).toFixed(1)}%`);
+}
+
+function destroyAllCharts() {
+  if (STATE.trendChart) {
+    STATE.trendChart.destroy();
+    STATE.trendChart = null;
+  }
+  if (STATE.analyticsMainChart) {
+    STATE.analyticsMainChart.destroy();
+    STATE.analyticsMainChart = null;
+  }
+}
+
+// ──────────────────────────────────────────────
+// Interactive Metric Selector Toggles
+// ──────────────────────────────────────────────
+function toggleMetric(metricKey) {
+  if (STATE.activeMetrics[metricKey] === undefined) return;
+  STATE.activeMetrics[metricKey] = !STATE.activeMetrics[metricKey];
+
+  const btn = $('toggle-' + metricKey);
+  const chk = $('chk-' + metricKey);
+  const isActive = STATE.activeMetrics[metricKey];
+  if (btn) btn.classList.toggle('active', isActive);
+  if (chk) chk.textContent = isActive ? '✓' : '✕';
+
+  const allActive = Object.values(STATE.activeMetrics).every(Boolean);
+  const allBtn = $('toggle-all');
+  const allChk = $('chk-all');
+  if (allBtn) allBtn.classList.toggle('active', allActive);
+  if (allChk) allChk.textContent = allActive ? '✓' : '—';
+
+  updateAnalyticsMainChart();
+}
+
+function toggleAllMetrics() {
+  const allActive = Object.values(STATE.activeMetrics).every(Boolean);
+  const targetState = !allActive;
+
+  Object.keys(STATE.activeMetrics).forEach(k => {
+    STATE.activeMetrics[k] = targetState;
+    const btn = $('toggle-' + k);
+    const chk = $('chk-' + k);
+    if (btn) btn.classList.toggle('active', targetState);
+    if (chk) chk.textContent = targetState ? '✓' : '✕';
+  });
+
+  const allBtn = $('toggle-all');
+  const allChk = $('chk-all');
+  if (allBtn) allBtn.classList.toggle('active', targetState);
+  if (allChk) allChk.textContent = targetState ? '✓' : '✕';
+
+  updateAnalyticsMainChart();
+}
+
+// ──────────────────────────────────────────────
+// Unified Air Analytics Interactive Chart
+// ──────────────────────────────────────────────
+function updateAnalyticsMainChart() {
+  const panel = $('panel-analytics');
+  if (panel && (panel.style.display === 'none' || panel.offsetParent === null)) return;
+
+  const ctx = $('analyticsMainChart');
+  if (!ctx) return;
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const textColor = isDark ? '#94A3B8' : '#475569';
+  const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const logs = STATE.historyLogs;
+  const labels = logs.map(l => l.label);
+  const pm25Data = logs.map(l => l.pm25);
+  const pm10Data = logs.map(l => l.pm10);
+  const co2Data = logs.map(l => l.co2);
+  const tempData = logs.map(l => l.temp);
+  const humidData = logs.map(l => l.humid);
+  const evocData = logs.map(l => l.evoc);
+
+  const datasets = [
+    {
+      id: 'pm25',
+      label: 'PM2.5 (µg/m³)',
+      data: pm25Data,
+      yAxisID: 'y',
+      borderColor: '#0D9488',
+      backgroundColor: 'rgba(13,148,136,0.08)',
+      borderWidth: 2.5,
+      pointRadius: 0,
+      pointHoverRadius: 6,
+      pointHitRadius: 12,
+      fill: false,
+      tension: 0.35,
+      hidden: !STATE.activeMetrics.pm25,
+    },
+    {
+      id: 'pm10',
+      label: 'PM10 (µg/m³)',
+      data: pm10Data,
+      yAxisID: 'y',
+      borderColor: '#06B6D4',
+      borderWidth: 2.2,
+      pointRadius: 0,
+      pointHoverRadius: 6,
+      pointHitRadius: 12,
+      fill: false,
+      tension: 0.35,
+      hidden: !STATE.activeMetrics.pm10,
+    },
+    {
+      id: 'co2',
+      label: 'CO2 (ppm)',
+      data: co2Data,
+      yAxisID: 'yCO2',
+      borderColor: '#3B82F6',
+      borderWidth: 2.5,
+      pointRadius: 0,
+      pointHoverRadius: 6,
+      pointHitRadius: 12,
+      fill: false,
+      tension: 0.35,
+      hidden: !STATE.activeMetrics.co2,
+    },
+    {
+      id: 'temp',
+      label: 'อุณหภูมิ (°C)',
+      data: tempData,
+      yAxisID: 'y',
+      borderColor: '#F59E0B',
+      borderWidth: 2.2,
+      pointRadius: 0,
+      pointHoverRadius: 6,
+      pointHitRadius: 12,
+      fill: false,
+      tension: 0.35,
+      hidden: !STATE.activeMetrics.temp,
+    },
+    {
+      id: 'humid',
+      label: 'ความชื้น (%RH)',
+      data: humidData,
+      yAxisID: 'yHumid',
+      borderColor: '#0284C7',
+      borderWidth: 2.2,
+      pointRadius: 0,
+      pointHoverRadius: 6,
+      pointHitRadius: 12,
+      fill: false,
+      tension: 0.35,
+      hidden: !STATE.activeMetrics.humid,
+    },
+    {
+      id: 'evoc',
+      label: 'EVOC (ppb)',
+      data: evocData,
+      yAxisID: 'y',
+      borderColor: '#8B5CF6',
+      borderWidth: 2.2,
+      pointRadius: 0,
+      pointHoverRadius: 6,
+      pointHitRadius: 12,
+      fill: false,
+      tension: 0.35,
+      hidden: !STATE.activeMetrics.evoc,
+    },
+  ];
+
+  const showLeftAxis = Boolean(STATE.activeMetrics.pm25 || STATE.activeMetrics.pm10 || STATE.activeMetrics.temp || STATE.activeMetrics.evoc);
+  const showCO2Axis = Boolean(STATE.activeMetrics.co2);
+  const showHumidAxis = Boolean(STATE.activeMetrics.humid);
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: {
+          color: textColor,
+          font: { family: 'Inter', size: 12, weight: '600' },
+          boxWidth: 14,
+          usePointStyle: true,
+          padding: 16,
+        },
+      },
+      tooltip: {
+        backgroundColor: 'rgba(15,23,42,0.92)',
+        titleColor: '#FFFFFF',
+        bodyColor: '#E2E8F0',
+        borderColor: 'rgba(13,148,136,0.4)',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 10,
+        bodyFont: { family: 'Inter', size: 12 },
+        titleFont: { family: 'Inter', weight: '700', size: 13 },
+      },
+    },
+    scales: {
+      x: {
+        ticks: { color: textColor, font: { size: 11, family: 'Inter' }, maxRotation: 30, autoSkip: true, maxTicksLimit: 14 },
+        grid: { color: gridColor },
+      },
+      y: {
+        type: 'linear',
+        position: 'left',
+        beginAtZero: true,
+        display: showLeftAxis,
+        title: { display: showLeftAxis, text: 'PM / อุณหภูมิ (°C) / EVOC (ppb)', color: textColor, font: { size: 11, weight: '600' } },
+        ticks: { color: textColor },
+        grid: { color: gridColor },
+      },
+      yCO2: {
+        type: 'linear',
+        position: 'right',
+        beginAtZero: false,
+        display: showCO2Axis,
+        title: { display: showCO2Axis, text: 'CO2 (ppm)', color: '#3B82F6', font: { size: 11, weight: '600' } },
+        ticks: { color: '#3B82F6' },
+        grid: { drawOnChartArea: false },
+      },
+      yHumid: {
+        type: 'linear',
+        position: 'right',
+        min: 0,
+        max: 100,
+        display: showHumidAxis,
+        title: { display: showHumidAxis, text: 'ความชื้น (%RH)', color: '#0284C7', font: { size: 11, weight: '600' } },
+        ticks: { color: '#0284C7' },
+        grid: { drawOnChartArea: false },
+      },
+    },
+  };
+
+  if (STATE.analyticsMainChart) {
+    STATE.analyticsMainChart.data.labels = labels;
+    datasets.forEach((ds, idx) => {
+      if (STATE.analyticsMainChart.data.datasets[idx]) {
+        STATE.analyticsMainChart.data.datasets[idx].data = ds.data;
+        STATE.analyticsMainChart.data.datasets[idx].hidden = ds.hidden;
+      }
+    });
+    if (STATE.analyticsMainChart.options.scales.y) {
+      STATE.analyticsMainChart.options.scales.y.display = showLeftAxis;
+      if (STATE.analyticsMainChart.options.scales.y.title) {
+        STATE.analyticsMainChart.options.scales.y.title.display = showLeftAxis;
+      }
+    }
+    if (STATE.analyticsMainChart.options.scales.yCO2) {
+      STATE.analyticsMainChart.options.scales.yCO2.display = showCO2Axis;
+      if (STATE.analyticsMainChart.options.scales.yCO2.title) {
+        STATE.analyticsMainChart.options.scales.yCO2.title.display = showCO2Axis;
+      }
+    }
+    if (STATE.analyticsMainChart.options.scales.yHumid) {
+      STATE.analyticsMainChart.options.scales.yHumid.display = showHumidAxis;
+      if (STATE.analyticsMainChart.options.scales.yHumid.title) {
+        STATE.analyticsMainChart.options.scales.yHumid.title.display = showHumidAxis;
+      }
+    }
+    STATE.analyticsMainChart.update('none');
+  } else {
+    STATE.analyticsMainChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets },
+      options: chartOptions,
+    });
+  }
+}
+
+function updateAllCharts() {
+  if (STATE.currentMainView === 'analytics') {
+    updateAnalyticsMainChart();
+  }
+}
+
+// Alias for compatibility
+function updateTrendChart() {
+  updateAllCharts();
+}
+
 function drawGauge(canvasId, value, max, ranges, unit) {
   const canvas = $(canvasId);
   if (!canvas) return;
@@ -1188,6 +1664,10 @@ const HUMID_RANGES = [
 ];
 
 function refreshGauges(pm10, co2, temp, humid) {
+  if (STATE.currentMainView !== 'overview') return;
+  const panel = $('panel-site4');
+  if (panel && panel.offsetParent === null) return;
+
   if (pm10 === undefined && STATE.site4Data) {
     pm10 = parseFloat(STATE.site4Data['PM10'] ?? STATE.site4Data.pm10 ?? 0);
     co2 = parseFloat(STATE.site4Data.CO2 ?? 0);
@@ -1198,86 +1678,6 @@ function refreshGauges(pm10, co2, temp, humid) {
   drawGauge('gauge-co2', co2 || 0, 1500, CO2_RANGES, 'ppm');
   drawGauge('gauge-temp', temp || 0, 45, TEMP_RANGES, '°C');
   drawGauge('gauge-humid', humid || 0, 100, HUMID_RANGES, '%RH');
-}
-// ──────────────────────────────────────────────
-// Historical trend line chart (Local Session Synchronized)
-// ──────────────────────────────────────────────
-function updateTrendChart() {
-  const ctx = $('trendChart');
-  if (!ctx) return;
-
-  const textColor = '#475569', gridColor = 'rgba(0,0,0,0.06)';
-  const now = Date.now();
-  let logs = [...STATE.historyLogs];
-
-  if (STATE.timeFilter === '15m') logs = logs.filter(l => l.timestamp >= now - 15 * 60 * 1000);
-  else if (STATE.timeFilter === '30m') logs = logs.filter(l => l.timestamp >= now - 30 * 60 * 1000);
-  else if (STATE.timeFilter === '1h') logs = logs.filter(l => l.timestamp >= now - 60 * 60 * 1000);
-  // 'all' displays everything collected in current login session
-
-  const labels = logs.map(l => l.label);
-  const pm25Data = logs.map(l => l.pm25);
-  const co2Data = logs.map(l => l.co2);
-  const tempData = logs.map(l => l.temp);
-
-  if (STATE.trendChart) {
-    STATE.trendChart.data.labels = labels;
-    STATE.trendChart.data.datasets[0].data = pm25Data;
-    STATE.trendChart.data.datasets[1].data = co2Data;
-    STATE.trendChart.data.datasets[2].data = tempData;
-    STATE.trendChart.update();
-    return;
-  }
-
-  const mkDataset = (label, data, color, yAxisID, fill) => ({
-    label, data, yAxisID,
-    borderColor: color,
-    backgroundColor: color === '#0D9488' ? 'rgba(13,148,136,0.12)' : (color === '#0284C7' ? 'rgba(2,132,199,0.12)' : 'rgba(217,119,6,0.12)'),
-    borderWidth: 2.5,
-    pointRadius: 4.5,
-    pointHoverRadius: 7,
-    pointBackgroundColor: color,
-    fill,
-    tension: 0.35,
-  });
-
-  STATE.trendChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        mkDataset('PM2.5 (µg/m³)', pm25Data, '#0D9488', 'y', true),
-        { ...mkDataset('CO2 (ppm)', co2Data, '#0284C7', 'yCO2', true), backgroundColor: 'rgba(2,132,199,0.08)' },
-        { ...mkDataset('อุณหภูมิ (°C)', tempData, '#D97706', 'y', false), backgroundColor: 'rgba(217,119,6,0.08)' },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { labels: { color: textColor, font: { family: 'Inter', size: 12, weight: '600' }, boxWidth: 14, usePointStyle: true } },
-        tooltip: {
-          backgroundColor: 'rgba(15,23,42,0.92)', titleColor: '#FFFFFF', bodyColor: '#E2E8F0',
-          borderColor: 'rgba(13,148,136,0.4)', borderWidth: 1, padding: 12, cornerRadius: 10,
-          bodyFont: { family: 'Inter' }, titleFont: { family: 'Inter', weight: '600' },
-        },
-      },
-      scales: {
-        x: { ticks: { color: textColor, font: { size: 11, family: 'Inter' } }, grid: { color: gridColor } },
-        y: {
-          type: 'linear', display: true, position: 'left', beginAtZero: true,
-          title: { display: true, text: 'PM2.5 (µg/m³) / อุณหภูมิ (°C)', color: textColor, font: { size: 11, family: 'Inter', weight: '600' } },
-          ticks: { color: textColor, font: { size: 11, family: 'Inter' } }, grid: { color: gridColor },
-        },
-        yCO2: {
-          type: 'linear', display: true, position: 'right', beginAtZero: false,
-          title: { display: true, text: 'CO2 (ppm)', color: '#0284C7', font: { size: 11, family: 'Inter', weight: '600' } },
-          ticks: { color: '#0284C7', font: { size: 11, family: 'Inter' } }, grid: { drawOnChartArea: false },
-        },
-      },
-    },
-  });
 }
 
 // ──────────────────────────────────────────────

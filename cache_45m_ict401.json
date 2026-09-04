@@ -58,5 +58,35 @@
         "evoc": 1,
         "rssi": "16",
         "iaqScore": 78
+    },
+    {
+        "timestamp_sec": 1788424025,
+        "timestamp": 1788424025000,
+        "label": "03\/09 10:27",
+        "time": "2026-09-03 15:26:00",
+        "site": "Site 4 - ICT401",
+        "pm25": 5,
+        "pm10": 9,
+        "co2": 1052,
+        "temp": 28.7,
+        "humid": 61.5,
+        "evoc": 1,
+        "rssi": "13",
+        "iaqScore": 68
+    },
+    {
+        "timestamp_sec": 1788485143,
+        "timestamp": 1788485143000,
+        "label": "04\/09 03:25",
+        "time": "2026-09-04 08:24:00",
+        "site": "Site 4 - ICT401",
+        "pm25": 3.8,
+        "pm10": 6,
+        "co2": 715,
+        "temp": 24.8,
+        "humid": 65.3,
+        "evoc": 2,
+        "rssi": "14",
+        "iaqScore": 83
     }
 ]

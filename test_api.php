@@ -1,158 +1,100 @@
 <?php
 /**
- * test_api.php — Simple API & Server Connection Tester for Emtrontech AIIR
- * ใช้สำหรับทดสอบการเชื่อมต่อ cURL, SSL Handshake และดึงข้อมูลสดจาก emtrontech.com บน Server
+ * test_api.php — AIIR API Connection & Route Diagnostics Tool
+ * หน้าทดสอบและวินิจฉัยเครือข่ายสำหรับระบบ AIIR IAQ (Site 4 ICT401)
+ * สามารถทดสอบทั้งแบบเชื่อมต่อตรง (Direct) และผ่าน Corporate Proxy พร้อมวัด Latency
  */
 
 header('Content-Type: text/html; charset=utf-8');
 
 // ---- Server Diagnostic Checks ----
-$curlEnabled  = extension_loaded('curl');
-$tempWritable = is_writable(sys_get_temp_dir());
-$opensslVer   = defined('OPENSSL_VERSION_TEXT') ? OPENSSL_VERSION_TEXT : 'N/A';
-$phpVer       = PHP_VERSION;
+$curlEnabled   = extension_loaded('curl');
+$tempWritable  = is_writable(sys_get_temp_dir());
+$phpVer        = PHP_VERSION;
+$serverIp      = $_SERVER['SERVER_ADDR'] ?? (gethostbyname(gethostname()) ?: '127.0.0.1');
+$clientIp      = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 
-// ---- Test cURL Fetch to AIIR API ----
-$startTime = microtime(true);
+// Check corporate proxy env
+$envProxy = getenv('HTTP_PROXY') ?: (getenv('http_proxy') ?: (getenv('ALL_PROXY') ?: 'None'));
 
-$targetUrl = 'https://emtrontech.com/AIIR/getSpecSiteData.php';
-$pageUrl   = 'https://emtrontech.com/AIIR/siteData.php?id=4&type=4&sName=ICT401';
-$cookieFile = sys_get_temp_dir() . '/aiir_test_cookie.txt';
+// Function to test cURL
+function testEndpoint(string $route = 'DIRECT'): array {
+    $url = 'https://emtrontech.com/AIIR/getSpecSiteData.php';
+    $postData = ['site' => '4', 'siteType' => '4', '_t' => time()];
 
-$httpCode = 0;
-$curlErr  = '';
-$rawBody  = '';
-$parsedData = null;
-
-$viaGateway = false;
-
-function getProxyServer(): string {
-    if (getenv('HTTP_PROXY')) return getenv('HTTP_PROXY');
-    foreach (['ssproxy.boonrawd.co.th:8080', '10.7.21.17:8080'] as $proxy) {
-        list($host, $port) = explode(':', $proxy);
-        $fp = @fsockopen($host, (int)$port, $errCode, $errStr, 0.2);
-        if ($fp) {
-            fclose($fp);
-            return $proxy;
-        }
-    }
-    return '';
-}
-
-if ($curlEnabled) {
-    $detectedProxy = getProxyServer();
-    // Helper function to build cURL options
-    $buildOpts = function($url, $isPost = false, $postBody = '') use ($cookieFile, $pageUrl, $detectedProxy) {
-        $opts = [
-            CURLOPT_URL            => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_COOKIEJAR      => $cookieFile,
-            CURLOPT_COOKIEFILE     => $cookieFile,
-            CURLOPT_CONNECTTIMEOUT => 6,
-            CURLOPT_TIMEOUT        => 10,
-            CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-        ];
-
-        if (!empty($detectedProxy)) {
-            $opts[CURLOPT_PROXY] = $detectedProxy;
-        }
-
-        if ($isPost) {
-            $opts[CURLOPT_POST] = true;
-            $opts[CURLOPT_POSTFIELDS] = $postBody;
-            $opts[CURLOPT_HTTPHEADER] = [
-                'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
-                'X-Requested-With: XMLHttpRequest',
-                'Referer: ' . $pageUrl,
-                'Origin: https://emtrontech.com',
-            ];
-        }
-
-        return $opts;
-    };
-
-    // 1. Establish cookie session with siteData.php
-    $ch1 = curl_init();
-    curl_setopt_array($ch1, $buildOpts($pageUrl));
-    curl_exec($ch1);
-    curl_close($ch1);
-
-    // 2. Fetch live spec data from getSpecSiteData.php
     $ch = curl_init();
-    curl_setopt_array($ch, $buildOpts($targetUrl, true, 'site=4&siteType=4'));
+    $opts = [
+        CURLOPT_URL            => $url,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => http_build_query($postData),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT        => 6,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With: XMLHttpRequest',
+            'Referer: https://emtrontech.com/AIIR/siteData.php?id=4&type=4&sName=ICT401',
+            'Accept: application/json, text/javascript, */*; q=0.01',
+        ],
+    ];
 
-    $rawBody  = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlErr  = curl_error($ch);
+    if ($route !== 'DIRECT') {
+        $opts[CURLOPT_PROXY] = $route;
+    }
+
+    curl_setopt_array($ch, $opts);
+
+    $t0 = microtime(true);
+    $raw = curl_exec($ch);
+    $ms = round((microtime(true) - $t0) * 1000, 2);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
     curl_close($ch);
 
-    if ($rawBody && empty($curlErr)) {
-        $json = json_decode($rawBody, true);
+    $parsed = null;
+    if ($code === 200 && !empty($raw)) {
+        $json = @json_decode($raw, true);
         if (is_array($json)) {
-            $parsedData = isset($json['d']) && is_array($json['d']) ? $json['d'] : $json;
-            $parsedData['_rssi'] = $json['rssi'] ?? $parsedData['rssi'] ?? 'N/A';
+            $parsed = isset($json['d']) && is_array($json['d']) ? $json['d'] : $json;
+            $parsed['_rssi'] = $json['rssi'] ?? $parsed['rssi'] ?? 'N/A';
         }
     }
 
-    // 3. Fallback via Public Gateway Proxy if direct server connection is reset by WAF
-    if (empty($parsedData)) {
-        $gatewayUrl = 'https://api.allorigins.win/get?url=' . urlencode('https://emtrontech.com/AIIR/siteData.php?id=4&type=4&sName=ICT401');
-        $chG = curl_init();
-        curl_setopt_array($chG, [
-            CURLOPT_URL            => $gatewayUrl,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_TIMEOUT        => 10,
-            CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        ]);
-        $gwRaw = curl_exec($chG);
-        $gwCode = curl_getinfo($chG, CURLINFO_HTTP_CODE);
-        curl_close($chG);
-
-        // allorigins /get returns JSON wrapper with 'contents' field
-        $gwJson = @json_decode($gwRaw, true);
-        $gwBody = (is_array($gwJson) && !empty($gwJson['contents'])) ? $gwJson['contents'] : $gwRaw;
-
-        if ($gwBody && $gwCode == 200 && strlen($gwBody) > 100) {
-            preg_match('/Temp[\s\S]{0,120}?(\d+\.?\d*)\s*°?C/i', $gwBody, $mTemp);
-            preg_match('/Humid[\s\S]{0,120}?(\d+\.?\d*)\s*%/i', $gwBody, $mHumid);
-            preg_match('/eVOC[\s\S]{0,120}?(\d+\.?\d*)\s*ppb/i', $gwBody, $mEvoc);
-            preg_match('/PM2[\.\\s]?5[\s\S]{0,120}?(\d+\.?\d*)\s*/i', $gwBody, $mPm25);
-            preg_match('/PM10[\s\S]{0,120}?(\d+\.?\d*)\s*/i', $gwBody, $mPm10);
-            preg_match('/CO2[\s\S]{0,120}?(\d+\.?\d*)\s*ppm/i', $gwBody, $mCo2);
-            preg_match('/rssi[\s:]*(\d+)/i', $gwBody, $mRssi);
-            preg_match('/Last\s*update[\s:]*(\d{4}[\-\/]\d{2}[\-\/]\d{2}\s+\d{2}:\d{2}:\d{2})/i', $gwBody, $mUpd);
-
-            if (!empty($mTemp[1]) || !empty($mCo2[1])) {
-                $parsedData = [
-                    'temp'  => $mTemp[1] ?? 0,
-                    'humid' => $mHumid[1] ?? 0,
-                    'evoc'  => $mEvoc[1] ?? 0,
-                    'pm25'  => $mPm25[1] ?? 0,
-                    'pm10'  => $mPm10[1] ?? 0,
-                    'co2'   => $mCo2[1] ?? 0,
-                    '_rssi' => $mRssi[1] ?? 'N/A',
-                    'lastUpdate' => $mUpd[1] ?? date('Y-m-d H:i:s'),
-                ];
-                $viaGateway = true;
-                $rawBody    = substr($gwBody, 0, 500);
-            }
-        }
-    }
+    return [
+        'route'      => $route,
+        'httpCode'   => $code,
+        'durationMs' => $ms,
+        'error'      => $err,
+        'raw'        => $raw,
+        'data'       => $parsed,
+        'success'    => ($code === 200 && $parsed !== null),
+    ];
 }
 
-$durationMs = round((microtime(true) - $startTime) * 1000, 2);
+// Perform Tests
+$testDirect  = testEndpoint('DIRECT');
+$testProxy1  = testEndpoint('10.7.21.17:8080');
+$testProxy2  = testEndpoint('ssproxy.boonrawd.co.th:8080');
+
+// Overall status
+$bestRoute = null;
+if ($testProxy1['success']) {
+    $bestRoute = $testProxy1;
+} elseif ($testDirect['success']) {
+    $bestRoute = $testDirect;
+} elseif ($testProxy2['success']) {
+    $bestRoute = $testProxy2;
+}
 ?>
 <!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🧪 AIIR API Connection Tester (ICT401)</title>
+  <title>🧪 AIIR API Diagnostics & Route Tester</title>
   <style>
     :root {
       --bg: #F8FAFC;
@@ -165,7 +107,7 @@ $durationMs = round((microtime(true) - $startTime) * 1000, 2);
       --border: #E2E8F0;
     }
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
       margin: 0;
@@ -173,7 +115,7 @@ $durationMs = round((microtime(true) - $startTime) * 1000, 2);
       line-height: 1.5;
     }
     .container {
-      max-width: 800px;
+      max-width: 900px;
       margin: 0 auto;
     }
     .header {
@@ -187,13 +129,15 @@ $durationMs = round((microtime(true) - $startTime) * 1000, 2);
       background: var(--primary);
       color: white;
       border: none;
-      padding: 8px 16px;
+      padding: 8px 18px;
       border-radius: 8px;
       font-weight: 600;
       cursor: pointer;
       text-decoration: none;
       font-size: 0.9rem;
+      transition: opacity 0.2s;
     }
+    .btn-refresh:hover { opacity: 0.9; }
     .card {
       background: var(--card-bg);
       border: 1px solid var(--border);
@@ -205,7 +149,7 @@ $durationMs = round((microtime(true) - $startTime) * 1000, 2);
     .card-title {
       font-weight: 700;
       font-size: 1.1rem;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -221,24 +165,25 @@ $durationMs = round((microtime(true) - $startTime) * 1000, 2);
     }
     .badge-ok { background: #E6F4EA; color: #137333; }
     .badge-err { background: #FCE8E6; color: #C5221F; }
+    .badge-warn { background: #FEF3C7; color: #92400E; }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
     }
     .metric-box {
       background: #F1F5F9;
-      padding: 14px;
+      padding: 12px;
       border-radius: 10px;
       text-align: center;
     }
     .metric-val {
-      font-size: 1.8rem;
+      font-size: 1.5rem;
       font-weight: 800;
       color: var(--primary);
     }
     .metric-lbl {
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       color: var(--muted);
       margin-top: 4px;
     }
@@ -251,93 +196,194 @@ $durationMs = round((microtime(true) - $startTime) * 1000, 2);
       font-size: 0.85rem;
     }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
     th { color: var(--muted); font-weight: 600; }
+    .route-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .route-active {
+      border-color: #0D9488;
+      background: #F0FDFA;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>🌿 AIIR API Connection Tester</h1>
-      <a href="test_api.php" class="btn-refresh">🔄 ทดสอบอีกครั้ง (Re-test)</a>
+      <h1>🧪 AIIR API Connection & Route Tester</h1>
+      <div style="display:flex; gap: 8px;">
+        <a href="test_api.php" class="btn-refresh">🔄 ทดสอบใหม่ (Rerun)</a>
+        <a href="index.html" class="btn-refresh" style="background:#0284C7;">📊 ไปหน้า Dashboard</a>
+      </div>
     </div>
 
-    <!-- Status Overview -->
+    <!-- Overview Status Card -->
     <div class="card">
       <div class="card-title">
-        สถานะการเชื่อมต่อ (Connection Result)
-        <?php if ($parsedData): ?>
-          <span class="status-badge badge-ok">✅ สำเร็จ 200 OK (<?php echo $durationMs; ?> ms)</span>
+        🌐 สถานะการเชื่อมต่อภาพรวม
+        <?php if ($bestRoute): ?>
+          <span class="status-badge badge-ok">✅ ใช้งานได้ปกติ (Route: <?= htmlspecialchars($bestRoute['route']) ?>)</span>
         <?php else: ?>
-          <span class="status-badge badge-err">❌ ล้มเหลว (HTTP <?php echo $httpCode; ?>)</span>
+          <span class="status-badge badge-err">❌ เชื่อมต่อไม่ได้ทุกเส้นทาง</span>
         <?php endif; ?>
       </div>
+      <p style="margin: 0; color: var(--muted); font-size: 0.95rem;">
+        <?php if ($bestRoute): ?>
+          ระบบสามารถเชื่อมต่อไปยังเซิร์ฟเวอร์ AIIR ได้สำเร็จ โดยใช้เส้นทาง <strong><?= htmlspecialchars($bestRoute['route']) ?></strong> (ใช้เวลาตอบสนอง <?= $bestRoute['durationMs'] ?> ms)
+        <?php else: ?>
+          ไม่สามารถเชื่อมต่อออกภายนอกได้ กรุณาตรวจสอบการตั้งค่าไฟร์วอลล์ หรือ Proxy บนระบบปฏิบัติการของเซิร์ฟเวอร์ VM
+        <?php endif; ?>
+      </p>
+    </div>
 
-      <?php if (!empty($curlErr)): ?>
-        <div style="color:var(--danger); background:#FEE2E2; padding:12px; border-radius:8px; margin-top:12px;">
-          🚨 <strong>cURL Error:</strong> <?php echo htmlspecialchars($curlErr); ?>
+    <!-- Route Test Comparison -->
+    <div class="card">
+      <div class="card-title">🚀 ผลการทดสอบเปรียบเทียบแต่ละเส้นทาง (Route Comparison)</div>
+      
+      <!-- 1. Proxy 10.7.21.17:8080 -->
+      <div class="route-card <?= $testProxy1['success'] ? 'route-active' : '' ?>">
+        <div>
+          <div style="font-weight:700;">🏢 Corporate Proxy (10.7.21.17:8080)</div>
+          <div style="font-size:0.85rem; color:var(--muted);">
+            HTTP Code: <strong><?= $testProxy1['httpCode'] ?></strong> | Latency: <strong><?= $testProxy1['durationMs'] ?> ms</strong>
+            <?php if ($testProxy1['error']): ?>
+              | <span style="color:var(--danger);"><?= htmlspecialchars($testProxy1['error']) ?></span>
+            <?php endif; ?>
+          </div>
         </div>
-      <?php endif; ?>
+        <div>
+          <?php if ($testProxy1['success']): ?>
+            <span class="status-badge badge-ok">SUCCESS</span>
+          <?php else: ?>
+            <span class="status-badge badge-err">FAILED</span>
+          <?php endif; ?>
+        </div>
+      </div>
 
+      <!-- 2. Proxy ssproxy.boonrawd.co.th:8080 -->
+      <div class="route-card <?= $testProxy2['success'] && !$testProxy1['success'] ? 'route-active' : '' ?>">
+        <div>
+          <div style="font-weight:700;">🏢 Corporate Proxy Hostname (ssproxy.boonrawd.co.th:8080)</div>
+          <div style="font-size:0.85rem; color:var(--muted);">
+            HTTP Code: <strong><?= $testProxy2['httpCode'] ?></strong> | Latency: <strong><?= $testProxy2['durationMs'] ?> ms</strong>
+            <?php if ($testProxy2['error']): ?>
+              | <span style="color:var(--danger);"><?= htmlspecialchars($testProxy2['error']) ?></span>
+            <?php endif; ?>
+          </div>
+        </div>
+        <div>
+          <?php if ($testProxy2['success']): ?>
+            <span class="status-badge badge-ok">SUCCESS</span>
+          <?php else: ?>
+            <span class="status-badge badge-err">FAILED</span>
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <!-- 3. Direct Connection -->
+      <div class="route-card <?= $testDirect['success'] && !$testProxy1['success'] ? 'route-active' : '' ?>">
+        <div>
+          <div style="font-weight:700;">🌍 Direct Connection (เน็ตตรง ไม่ผ่าน Proxy)</div>
+          <div style="font-size:0.85rem; color:var(--muted);">
+            HTTP Code: <strong><?= $testDirect['httpCode'] ?></strong> | Latency: <strong><?= $testDirect['durationMs'] ?> ms</strong>
+            <?php if ($testDirect['error']): ?>
+              | <span style="color:var(--danger);"><?= htmlspecialchars($testDirect['error']) ?></span>
+            <?php endif; ?>
+          </div>
+        </div>
+        <div>
+          <?php if ($testDirect['success']): ?>
+            <span class="status-badge badge-ok">SUCCESS</span>
+          <?php else: ?>
+            <span class="status-badge badge-err">BLOCKED / TIMEOUT</span>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Sensor Readings Preview -->
+    <?php if ($bestRoute && !empty($bestRoute['data'])): 
+      $d = $bestRoute['data'];
+    ?>
+    <div class="card">
+      <div class="card-title">📊 ข้อมูลเซ็นเซอร์สด (Room SITE 4 ICT 401)</div>
+      <div class="grid">
+        <div class="metric-box">
+          <div class="metric-val"><?= htmlspecialchars($d['pm25Device'] ?? $d['Rpm25Device'] ?? '0') ?></div>
+          <div class="metric-lbl">PM2.5 (µg/m³)</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val"><?= htmlspecialchars($d['pm10Device'] ?? $d['Rpm10Device'] ?? '0') ?></div>
+          <div class="metric-lbl">PM10 (µg/m³)</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val"><?= htmlspecialchars($d['co2Device'] ?? $d['Rco2Device'] ?? '0') ?></div>
+          <div class="metric-lbl">CO2 (ppm)</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val"><?= htmlspecialchars($d['tempDevice'] ?? $d['RtempDevice'] ?? '0') ?>°C</div>
+          <div class="metric-lbl">อุณหภูมิ</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val"><?= htmlspecialchars($d['RhumidDevice'] ?? $d['humidDevice'] ?? '0') ?>%</div>
+          <div class="metric-lbl">ความชื้น</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val"><?= htmlspecialchars($d['RevocDevice'] ?? $d['evocDevice'] ?? '0') ?></div>
+          <div class="metric-lbl">eVOC (ppb)</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val"><?= htmlspecialchars($d['_rssi'] ?? '0') ?></div>
+          <div class="metric-lbl">RSSI (dBm)</div>
+        </div>
+      </div>
+      <div style="font-size:0.85rem; color:var(--muted); margin-top:12px; text-align:right;">
+        เวลาอัปเดตจากเซ็นเซอร์: <strong><?= htmlspecialchars($d['lastUpdate'] ?? '-') ?></strong>
+      </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- System Diagnostic Details -->
+    <div class="card">
+      <div class="card-title">⚙️ สภาพแวดล้อมระบบและเครื่องเซิร์ฟเวอร์ (Server Environment)</div>
       <table>
-        <tr><th>เป้าหมาย (Target API)</th><td><code>https://emtrontech.com/AIIR/getSpecSiteData.php</code></td></tr>
-        <tr><th>ห้องเซ็นเซอร์</th><td>Site 4 - ICT401</td></tr>
-        <tr><th>เวลาตอบกลับ (Latency)</th><td><?php echo $durationMs; ?> ms</td></tr>
-        <tr><th>PHP Version</th><td><?php echo $phpVer; ?></td></tr>
-        <tr><th>cURL Extension</th><td><?php echo $curlEnabled ? '✅ Enabled' : '❌ Disabled'; ?></td></tr>
-        <tr><th>OpenSSL Version</th><td><?php echo htmlspecialchars($opensslVer); ?></td></tr>
-        <tr><th>Temp Dir Writable</th><td><?php echo $tempWritable ? '✅ Writable (' . sys_get_temp_dir() . ')' : '❌ Permission Denied'; ?></td></tr>
+        <tr>
+          <th>Server IP</th>
+          <td><?= htmlspecialchars($serverIp) ?></td>
+        </tr>
+        <tr>
+          <th>Client IP</th>
+          <td><?= htmlspecialchars($clientIp) ?></td>
+        </tr>
+        <tr>
+          <th>PHP Version</th>
+          <td><?= htmlspecialchars($phpVer) ?></td>
+        </tr>
+        <tr>
+          <th>cURL Extension</th>
+          <td><?= $curlEnabled ? '<span class="status-badge badge-ok">Enabled</span>' : '<span class="status-badge badge-err">Disabled</span>' ?></td>
+        </tr>
+        <tr>
+          <th>Temp Directory Writable</th>
+          <td><?= $tempWritable ? '<span class="status-badge badge-ok">Writable (' . htmlspecialchars(sys_get_temp_dir()) . ')</span>' : '<span class="status-badge badge-err">Not Writable</span>' ?></td>
+        </tr>
+        <tr>
+          <th>Environment Proxy</th>
+          <td><?= htmlspecialchars($envProxy) ?></td>
+        </tr>
       </table>
     </div>
 
-    <!-- Live Telemetry Data -->
-    <?php if ($parsedData): ?>
-      <?php
-        $temp  = (float)($parsedData['tempDevice']  ?? $parsedData['RtempDevice']  ?? $parsedData['temp']  ?? 0);
-        $humid = (float)($parsedData['RhumidDevice'] ?? $parsedData['humidDevice'] ?? $parsedData['humid'] ?? 0);
-        $evoc  = (float)($parsedData['RevocDevice']  ?? $parsedData['evocDevice']  ?? $parsedData['evoc']  ?? 0);
-        $pm25  = (float)($parsedData['pm25Device']  ?? $parsedData['Rpm25Device']  ?? $parsedData['pm25']  ?? 0);
-        $pm10  = (float)($parsedData['pm10Device']  ?? $parsedData['Rpm10Device']  ?? $parsedData['pm10']  ?? 0);
-        $co2   = (float)($parsedData['co2Device']   ?? $parsedData['Rco2Device']   ?? $parsedData['co2']   ?? 0);
-        $rssi  = (string)($parsedData['_rssi'] ?? '0');
-        $upd   = (string)($parsedData['lastUpdate'] ?? $parsedData['updateSite'] ?? date('d/m/Y H:i:s'));
-      ?>
-      <div class="card">
-        <div class="card-title">📡 ข้อมูลเซ็นเซอร์สดจากเว็บปลายทาง (Live Data)</div>
-        <div style="font-size:0.85rem; color:var(--muted); margin-bottom:16px;">⏱️ อัปเดตล่าสุดจากอุปกรณ์: <strong><?php echo htmlspecialchars($upd); ?></strong></div>
-        <div class="grid">
-          <div class="metric-box">
-            <div class="metric-val"><?php echo number_format($pm25, 1); ?></div>
-            <div class="metric-lbl">PM2.5 (µg/m³)</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-val"><?php echo number_format($pm10, 1); ?></div>
-            <div class="metric-lbl">PM10 (µg/m³)</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-val"><?php echo number_format($co2, 0); ?></div>
-            <div class="metric-lbl">CO2 (ppm)</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-val"><?php echo number_format($temp, 1); ?>°C</div>
-            <div class="metric-lbl">อุณหภูมิ</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-val"><?php echo number_format($humid, 1); ?>%</div>
-            <div class="metric-lbl">ความชื้น</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-val"><?php echo number_format($evoc, 0); ?></div>
-            <div class="metric-lbl">eVOC (ppb)</div>
-          </div>
-        </div>
-      </div>
-    <?php endif; ?>
-
-    <!-- Raw API Response -->
+    <!-- Raw API Response Payload -->
     <div class="card">
-      <div class="card-title">📄 Raw Payload จาก emtrontech.com</div>
-      <pre><?php echo htmlspecialchars($rawBody ?: 'No response payload'); ?></pre>
+      <div class="card-title">📦 Raw Payload จาก API (Active Route: <?= htmlspecialchars($bestRoute['route'] ?? 'N/A') ?>)</div>
+      <pre><?= htmlspecialchars($bestRoute['raw'] ?? 'No data received') ?></pre>
     </div>
   </div>
 </body>
