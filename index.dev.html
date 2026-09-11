@@ -76,27 +76,15 @@
         <span class="topbar-brand">🌿 AIR IAQ Smart Dashboard</span>
       </div>
       <div class="topbar-right">
-        <!-- Windows Desktop Notification Toggle -->
-        <button class="notif-toggle-btn" id="notifToggleBtn" onclick="toggleDesktopNotifications()"
-          title="เปิด/ปิด การแจ้งเตือนบนหน้าจอ Windows (Desktop Notification)">
-          <span id="notifBtnIcon">🔕</span>
-          <span id="notifBtnText">แจ้งเตือน Windows</span>
-        </button>
         <!-- Sound alert toggle -->
         <button class="sound-toggle-btn" id="soundAlertToggleBtn" onclick="toggleSoundAlert()"
-          title="เปิด/ปิด ระบบแจ้งเตือน Pop-Up และเสียง">
+          title="เปิด/ปิด เสียงแจ้งเตือน">
           <span id="soundAlertIcon">🔔</span>
-          <span class="sound-toggle-text" id="soundAlertText">แจ้งเตือน: เปิด</span>
+          <span class="sound-toggle-text" id="soundAlertText">เสียงแจ้งเตือน: เปิด</span>
         </button>
-        <!-- Siren Volume Slider -->
-        <div class="volume-control-wrap" title="ระดับความดังเสียงไซเรนฉุกเฉิน">
-          <span id="volumeIcon">🔊</span>
-          <input type="range" class="volume-slider" id="alertVolumeSlider" min="10" max="100" value="80"
-            oninput="changeAlertVolume(this.value)" title="ปรับระดับเสียงไซเรน" />
-        </div>
         <!-- Siren & Alert Test Button -->
-        <button class="btn-test-alert" onclick="testAlertModal('critical')" title="ทดสอบไซเรนและหน้าต่างแจ้งเตือนฉุกเฉิน IT Support">
-          🚨 ทดสอบไซเรน
+        <button class="btn-test-alert" onclick="testAlertModal()" title="ทดสอบเสียงแจ้งเตือนและ Pop-Up">
+          🚨 ทดสอบเสียงเตือน
         </button>
         <div class="topbar-user-area" id="topbarUserArea" hidden>
           <div class="topbar-user-pill">
@@ -735,55 +723,30 @@
       <div class="alert-modal-overlay" id="alertModalOverlay" hidden>
         <div class="alert-modal-card" id="alertModalCard">
           <div class="alert-modal-header">
-            <div class="alert-modal-badge" id="alertModalBadge">🚨 EMERGENCY IAQ CRITICAL ALERT</div>
+            <div class="alert-modal-badge" id="alertModalBadge">⚠️ EMERGENCY IAQ ALERT</div>
             <button class="alert-modal-close" onclick="closeAlertModal()" title="ปิดหน้าต่าง">&#x2715;</button>
           </div>
           <div class="alert-modal-body">
             <div class="alert-modal-icon-wrap">
               <div class="alert-modal-icon" id="alertModalIcon">🚨</div>
             </div>
-            <h2 class="alert-modal-title" id="alertModalTitle">ตรวจพบคุณภาพอากาศเกินเกณฑ์ระดับอันตราย!</h2>
+            <h2 class="alert-modal-title" id="alertModalTitle">ตรวจพบคุณภาพอากาศเกินเกณฑ์มาตรฐาน!</h2>
             <p class="alert-modal-sub">ห้อง <strong id="alertModalSiteName">SITE 4 ICT 401</strong>
-              ตรวจพบดัชนีเซ็นเซอร์ผิดปกติที่อาจส่งผลกระทบต่อสุขภาพและระบบ:</p>
+              ตรวจพบดัชนีเซ็นเซอร์ผิดปกติที่อาจส่งผลกระทบต่อสุขภาพ:</p>
             <div class="alert-modal-list" id="alertModalList">
-              <!-- Dynamic Alert Items -->
+              <!-- Dynamic Alert Items (ค่าบอก) -->
             </div>
             <div class="alert-modal-action-box" id="alertModalAiAction">
               💡 <strong>คำแนะนำ AI:</strong> ระบบสั่งการเปิดเครื่องฟอกอากาศและระบายอากาศแบบเร่งด่วนโดยอัตโนมัติแล้ว
             </div>
-
-            <!-- IT Support Action Plan Checklist -->
-            <div class="it-support-checklist" id="itSupportChecklist">
-              <div class="it-checklist-title">📋 แผนปฏิบัติการด่วน IT Support (Emergency Checklist)</div>
-              <ul class="it-checklist-items">
-                <li><span>💨</span> <span>ตรวจสอบระบบระบายอากาศ / HVAC และ Exhaust Fan ให้ทำงานเต็มกำลัง 100%</span></li>
-                <li><span>🚪</span> <span>ตรวจสอบประตู/หน้าต่างห้อง Server และพื้นที่ปฏิบัติงานว่าปิดสนิท</span></li>
-                <li><span>📢</span> <span>สื่อสารแจ้งเตือนหัวหน้างานหรือผู้รับผิดชอบพื้นที่ทันทีหากค่า CO2 เกิน 1,400 ppm</span></li>
-                <li><span>🔌</span> <span>ตรวจสอบสถานะการจ่ายไฟและการเชื่อมต่อสัญญาณ WiFi/RSSI ของเซ็นเซอร์ Site 4</span></li>
-              </ul>
-            </div>
           </div>
           <div class="alert-modal-footer">
-            <div class="alert-modal-actions-grid">
-              <button class="btn-copy-ticket" id="btnCopyTicket" onclick="copyIncidentDetails()" title="คัดลอกข้อมูลสรุปเหตุการณ์สำหรับส่ง LINE หรือ Ticket">
-                📋 คัดลอกสรุปเคส (LINE/Ticket)
-              </button>
-              <button class="btn-snooze-alert" id="btnSnoozeAlert" onclick="snoozeAlert(5)" title="พักการเตือนชั่วคราว 5 นาทีขณะกำลังแก้ไขปัญหา">
-                ⏰ พักเตือน 5 นาที (Snooze)
-              </button>
-              <button class="btn-alert-ack" id="btnAlertAck" onclick="acknowledgeAlertCase()">
-                ✅ รับทราบและปิดแจ้งเตือน (Acknowledge)
-              </button>
-            </div>
+            <button class="btn-alert-ack" id="btnAlertAck" onclick="closeAlertModal()">
+              ✅ รับทราบและปิดแจ้งเตือน (Acknowledge)
+            </button>
           </div>
         </div>
       </div>
-
-      <!-- Emergency Screen-Edge Strobe Overlay -->
-      <div class="emergency-strobe-overlay" id="emergencyStrobeOverlay" hidden></div>
-
-      <!-- Snooze Floating Status Banner -->
-      <div class="snooze-floating-bar" id="snoozeFloatingBar" style="display:none;"></div>
   </main>
 
   <script src="js/app.js?v=3.1" onerror="this.onerror=null;var s=document.createElement('script');s.src='app.js?v=3.1';document.body.appendChild(s);"></script>

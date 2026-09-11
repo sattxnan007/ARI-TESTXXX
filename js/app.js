@@ -60,15 +60,10 @@ const STATE = {
   },
   gaugeCharts: { pm10: null, co2: null, temp: null, humid: null },
   soundAlertEnabled: true,
-  alertVolume: 0.8,
   isCriticalActive: false,
   alarmInterval: null,
-  snoozeUntil: 0,
-  snoozeInterval: null,
   titleFlashingInterval: null,
   originalTitle: 'AIR IAQ Smart Dashboard',
-  desktopNotifGranted: false,
-  currentAlertData: null,
   // Server-Authoritative Time Synchronization
   serverTimeOffset: 0,       // Estimated difference (serverNow - clientNow) in ms
   lastServerSyncTime: null,  // Date of last authoritative server sync
@@ -784,7 +779,7 @@ function renderSiteDetail(data) {
 }
 
 // ──────────────────────────────────────────────
-// IT Support Critical Alerting Engine (Web Audio API Synthesizer)
+// High-Alert Critical Sound Engine (Web Audio API)
 // ──────────────────────────────────────────────
 let globalAudioCtx = null;
 
@@ -800,7 +795,8 @@ function getAudioContext() {
 }
 
 /**
- * Play Dual-Tone Emergency Siren (NOC Alert standard 960Hz / 770Hz warble)
+ * High-Alert Critical Wake-Up Alarm (Fast 4-Pulse Piercing Pattern: 1350Hz - 2350Hz)
+ * Sharp, urgent, cutting through ambient noise and background tasks immediately.
  */
 function playCriticalEmergencySiren() {
   if (!STATE.soundAlertEnabled) return;
@@ -808,39 +804,41 @@ function playCriticalEmergencySiren() {
     const ctx = getAudioContext();
     if (!ctx) return;
     const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
 
-    osc.type = 'sawtooth';
-    const vol = Math.max(0.05, Math.min(1.0, STATE.alertVolume || 0.8)) * 0.45;
-    gain.gain.setValueAtTime(vol, now);
+    // Rapid 4-burst piercing alarm (Duration: ~0.42s)
+    const pulses = [
+      { start: 0.00, dur: 0.075, f0: 1350, f1: 1750, type: 'sawtooth', gain: 0.40 },
+      { start: 0.10, dur: 0.075, f0: 1350, f1: 1750, type: 'sawtooth', gain: 0.40 },
+      { start: 0.20, dur: 0.085, f0: 1750, f1: 2200, type: 'sawtooth', gain: 0.45 },
+      { start: 0.31, dur: 0.120, f0: 1800, f1: 2400, type: 'square',   gain: 0.45 },
+    ];
 
-    // Dual-tone warble (alternating 960Hz and 770Hz across 0.85s)
-    osc.frequency.setValueAtTime(960, now);
-    osc.frequency.setValueAtTime(960, now + 0.12);
-    osc.frequency.setValueAtTime(770, now + 0.13);
-    osc.frequency.setValueAtTime(770, now + 0.25);
-    osc.frequency.setValueAtTime(960, now + 0.26);
-    osc.frequency.setValueAtTime(960, now + 0.38);
-    osc.frequency.setValueAtTime(770, now + 0.39);
-    osc.frequency.setValueAtTime(770, now + 0.50);
-    osc.frequency.setValueAtTime(960, now + 0.51);
-    osc.frequency.setValueAtTime(960, now + 0.63);
-    osc.frequency.setValueAtTime(770, now + 0.64);
-    osc.frequency.exponentialRampToValueAtTime(300, now + 0.85);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+    pulses.forEach(p => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const t0 = now + p.start;
+      const t1 = t0 + p.dur;
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.85);
+      osc.type = p.type;
+      osc.frequency.setValueAtTime(p.f0, t0);
+      osc.frequency.exponentialRampToValueAtTime(p.f1, t1);
+
+      gain.gain.setValueAtTime(p.gain, t0);
+      gain.gain.setValueAtTime(p.gain, t1 - 0.015);
+      gain.gain.linearRampToValueAtTime(0.001, t1);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t1);
+    });
   } catch (e) {
-    console.warn('[CriticalSiren]', e);
+    console.warn('[CriticalAlertSound]', e);
   }
 }
 
 /**
- * Play Soft Warning Chime for Level 1 Warnings
+ * Warning Chime (Sharp 2-Pulse Alert: 1100Hz -> 1700Hz)
  */
 function playWarningChime() {
   if (!STATE.soundAlertEnabled) return;
@@ -848,38 +846,48 @@ function playWarningChime() {
     const ctx = getAudioContext();
     if (!ctx) return;
     const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
 
-    osc.type = 'sine';
-    const vol = Math.max(0.05, Math.min(1.0, STATE.alertVolume || 0.8)) * 0.25;
-    gain.gain.setValueAtTime(vol, now);
-    osc.frequency.setValueAtTime(587.33, now);
-    osc.frequency.exponentialRampToValueAtTime(880, now + 0.3);
-    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+    const pulses = [
+      { start: 0.00, dur: 0.08, f0: 1100, f1: 1450, type: 'sine', gain: 0.30 },
+      { start: 0.11, dur: 0.10, f0: 1450, f1: 1800, type: 'sine', gain: 0.35 },
+    ];
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.35);
+    pulses.forEach(p => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const t0 = now + p.start;
+      const t1 = t0 + p.dur;
+
+      osc.type = p.type;
+      osc.frequency.setValueAtTime(p.f0, t0);
+      osc.frequency.exponentialRampToValueAtTime(p.f1, t1);
+
+      gain.gain.setValueAtTime(p.gain, t0);
+      gain.gain.setValueAtTime(p.gain, t1 - 0.015);
+      gain.gain.linearRampToValueAtTime(0.001, t1);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t1);
+    });
   } catch (e) {
     console.warn('[WarningChime]', e);
   }
 }
 
 /**
- * Start Continuous Siren Loop (Repeats every 4 seconds until Acked or Snoozed)
+ * Start Continuous Alarm Loop (Repeats every 2.5 seconds until Acknowledged)
  */
 function startContinuousCriticalAlarm() {
   if (STATE.alarmInterval) return;
   STATE.isCriticalActive = true;
   playCriticalEmergencySiren();
   STATE.alarmInterval = setInterval(() => {
-    if (Date.now() < STATE.snoozeUntil) return;
     if (STATE.isCriticalActive && STATE.soundAlertEnabled) {
       playCriticalEmergencySiren();
     }
-  }, 4000);
+  }, 2500);
 }
 
 function stopContinuousAlarm() {
@@ -891,15 +899,15 @@ function stopContinuousAlarm() {
 }
 
 /**
- * Tab Title Flashing Alert (Draws immediate attention when IT Support is in other windows)
+ * Tab Title Flashing Alert
  */
 function startTabAlertFlashing(titleText) {
   stopTabAlertFlashing();
   if (!STATE.originalTitle) STATE.originalTitle = document.title || 'AIR IAQ Smart Dashboard';
   let toggle = false;
-  const alertTxt = titleText || '🚨 [CRITICAL ALERT] คุณภาพอากาศเกินเกณฑ์วิกฤต!';
+  const alertTxt = titleText || '🚨 [ALERT] คุณภาพอากาศเกินเกณฑ์!';
   STATE.titleFlashingInterval = setInterval(() => {
-    document.title = toggle ? alertTxt : `⚠️ ตรวจสอบด่วน (IT Support Case) - ${STATE.originalTitle}`;
+    document.title = toggle ? alertTxt : `⚠️ ตรวจสอบระบบ - ${STATE.originalTitle}`;
     toggle = !toggle;
   }, 900);
 }
@@ -914,276 +922,22 @@ function stopTabAlertFlashing() {
   }
 }
 
-/**
- * Web Notification API (Windows Desktop OS Notifications)
- */
-function initDesktopNotifications() {
-  if (!('Notification' in window)) {
-    const btn = $('notifToggleBtn');
-    if (btn) btn.style.display = 'none';
-    return;
-  }
-  updateDesktopNotifButtonUI();
-}
-
-function updateDesktopNotifButtonUI() {
-  const btn = $('notifToggleBtn');
-  const icon = $('notifBtnIcon');
-  const txt = $('notifBtnText');
-  if (!btn) return;
-  if (Notification.permission === 'granted') {
-    STATE.desktopNotifGranted = true;
-    btn.classList.add('granted');
-    if (icon) icon.textContent = '🔔';
-    if (txt) txt.textContent = 'แจ้งเตือน Windows: เปิด';
-  } else {
-    STATE.desktopNotifGranted = false;
-    btn.classList.remove('granted');
-    if (icon) icon.textContent = '🔕';
-    if (txt) txt.textContent = 'แจ้งเตือน Windows: ปิด';
-  }
-}
-
-async function toggleDesktopNotifications() {
-  if (!('Notification' in window)) {
-    showToast('❌ เบราว์เซอร์นี้ไม่รองรับ Desktop Notification', 'error');
-    return;
-  }
-  if (Notification.permission === 'granted') {
-    showToast('🔔 ระบบแจ้งเตือนบน Windows เปิดใช้งานอยู่แล้ว', 'info');
-    sendDesktopNotification('🌿 AIR IAQ Dashboard', 'ระบบแจ้งเตือนฉุกเฉินพร้อมทำงานแล้ว เมื่อเกิดเหตุวิกฤตจะแจ้งเตือนทันที', 'info');
-    return;
-  }
-  try {
-    const perm = await Notification.requestPermission();
-    updateDesktopNotifButtonUI();
-    if (perm === 'granted') {
-      showToast('✅ เปิดการแจ้งเตือนบน Windows เรียบร้อยแล้ว', 'success');
-      sendDesktopNotification('🌿 AIR IAQ Dashboard', 'การแจ้งเตือนบน Windows เปิดใช้งานแล้ว จะเด้งเตือนแม้คุณกำลังแก้เคสอื่น', 'info');
-    } else {
-      showToast('⚠️ กรุณาอนุญาต Notification ในการตั้งค่าเบราว์เซอร์', 'warn');
-    }
-  } catch (err) {
-    console.warn('[DesktopNotif]', err);
-  }
-}
-
-function sendDesktopNotification(title, body, severity = 'critical') {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  try {
-    const notif = new Notification(title, {
-      body: body,
-      icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🚨</text></svg>',
-      tag: 'iaq-emergency-alert',
-      requireInteraction: severity === 'critical',
-      silent: false,
-    });
-    notif.onclick = () => {
-      window.focus();
-      notif.close();
-    };
-  } catch (err) {
-    console.warn('[sendDesktopNotif]', err);
-  }
-}
-
-/**
- * Volume Slider Adjustment
- */
-function changeAlertVolume(val) {
-  const numeric = parseInt(val, 10) / 100;
-  STATE.alertVolume = isNaN(numeric) ? 0.8 : numeric;
-  try {
-    const ctx = getAudioContext();
-    if (ctx) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(STATE.alertVolume * 0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.15);
-    }
-  } catch (e) {}
-}
-
-/**
- * 5-Minute Snooze System
- */
-function snoozeAlert(minutes = 5) {
-  STATE.snoozeUntil = Date.now() + minutes * 60 * 1000;
-  stopContinuousAlarm();
-  stopTabAlertFlashing();
-  hideEmergencyStrobe();
-  closeAlertModal(false);
-
-  showToast(`⏰ พักการเตือนชั่วคราว ${minutes} นาที (Snooze Mode)`, 'info');
-  renderSnoozeFloatingBar();
-
-  if (STATE.snoozeInterval) clearInterval(STATE.snoozeInterval);
-  STATE.snoozeInterval = setInterval(() => {
-    const remainingMs = STATE.snoozeUntil - Date.now();
-    if (remainingMs <= 0) {
-      cancelSnooze(true);
-      if (STATE.site4Data) {
-        const d = STATE.site4Data;
-        checkAirQualityAlerts(
-          parseFloat(d['PM2.5'] ?? d.pm25 ?? 0),
-          parseFloat(d.PM10 ?? d.pm10 ?? 0),
-          parseFloat(d.CO2 ?? d.co2 ?? 0),
-          parseFloat(d.temp ?? 0),
-          parseFloat(d.humid ?? 0),
-          parseFloat(d.evoc ?? 0)
-        );
-      }
-    } else {
-      updateSnoozeTimeText(remainingMs);
-    }
-  }, 1000);
-}
-
-function updateSnoozeTimeText(remainingMs) {
-  const bar = $('snoozeFloatingBar');
-  if (!bar) return;
-  const totalSec = Math.max(0, Math.floor(remainingMs / 1000));
-  const min = String(Math.floor(totalSec / 60)).padStart(2, '0');
-  const sec = String(totalSec % 60).padStart(2, '0');
-  bar.innerHTML = `
-    <span>⏰ ระบบอยู่ในโหมดพักเตือน: เหลือ <strong>${min}:${sec}</strong> นาที</span>
-    <button onclick="cancelSnooze(false)" style="background:rgba(255,255,255,0.15);border:none;border-radius:20px;padding:3px 10px;color:#fff;cursor:pointer;font-size:0.75rem;font-weight:700;">ยกเลิก Snooze</button>
-  `;
-}
-
-function renderSnoozeFloatingBar() {
-  let bar = $('snoozeFloatingBar');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'snoozeFloatingBar';
-    bar.className = 'snooze-floating-bar';
-    document.body.appendChild(bar);
-  }
-  bar.style.display = 'flex';
-  updateSnoozeTimeText(STATE.snoozeUntil - Date.now());
-}
-
-function cancelSnooze(fromTimeout = false) {
-  STATE.snoozeUntil = 0;
-  if (STATE.snoozeInterval) {
-    clearInterval(STATE.snoozeInterval);
-    STATE.snoozeInterval = null;
-  }
-  const bar = $('snoozeFloatingBar');
-  if (bar) bar.style.display = 'none';
-  if (!fromTimeout) {
-    showToast('🔔 ยกเลิกการพักแจ้งเตือนแล้ว ระบบกลับมาเฝ้าระวังปกติ', 'info');
-  }
-}
-
-/**
- * 1-Click Copy Incident Report for IT Support (LINE / Ticket ready)
- */
-function copyIncidentDetails() {
-  const data = STATE.currentAlertData;
-  const timeStr = getServerNowStr();
-  let text = `🚨 [แจ้งเตือนด่วน IT SUPPORT INCIDENT REPORT] 🚨\n`;
-  text += `วันเวลาที่ตรวจพบ: ${timeStr}\n`;
-  text += `สถานที่: Site 4 (ICT 401)\n`;
-  text += `ระดับความรุนแรง: ${data && data.isCritical ? '🔴 CRITICAL EMERGENCY (วิกฤต)' : '🟡 WARNING (เฝ้าระวัง)'}\n`;
-  text += `----------------------------------------\n`;
-  text += `ดัชนีเซ็นเซอร์ที่ผิดปกติ:\n`;
-  if (data && data.items && data.items.length > 0) {
-    data.items.forEach(it => {
-      text += `• ${it.name}: ${it.val} (เกณฑ์ ${it.limit})\n`;
-    });
-  } else {
-    text += `• ค่าตรวจวัดเกินขีดจำกัดความปลอดภัยมาตรฐาน\n`;
-  }
-  text += `----------------------------------------\n`;
-  text += `ขั้นตอนที่ IT Support กำลังดำเนินการ:\n`;
-  text += `1. ตรวจสอบระบบ HVAC / Exhaust Fan ให้เร่งระบายอากาศ 100%\n`;
-  text += `2. ตรวจสอบสภาพแวดล้อมและปิดประตูหน้าต่างห้อง\n`;
-  text += `3. มอนิเตอร์ค่า Real-time ผ่าน AIR IAQ Smart Dashboard\n`;
-  text += `----------------------------------------\n`;
-  text += `รายงานโดย: IT Support On-Duty (${STATE.username || 'Admin'})\n`;
-
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(() => {
-      showToast('📋 คัดลอกรายงานเหตุการณ์เรียบร้อย! นำไปวางใน LINE หรือ Ticket ได้ทันที', 'success', 4000);
-    }).catch(() => {
-      fallbackCopyText(text);
-    });
-  } else {
-    fallbackCopyText(text);
-  }
-}
-
-function fallbackCopyText(text) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  document.body.appendChild(ta);
-  ta.select();
-  try {
-    document.execCommand('copy');
-    showToast('📋 คัดลอกรายงานเหตุการณ์เรียบร้อยแล้ว!', 'success');
-  } catch (e) {
-    showToast('⚠️ ไม่สามารถคัดลอกอัตโนมัติได้', 'warn');
-  }
-  document.body.removeChild(ta);
-}
-
-/**
- * Acknowledge Alert Case (Syncs with MySQL iaq_alerts)
- */
-async function acknowledgeAlertCase() {
-  stopContinuousAlarm();
-  stopTabAlertFlashing();
-  hideEmergencyStrobe();
-  closeAlertModal();
-  cancelSnooze(true);
-
-  try {
-    const res = await fetch('proxy.php?action=ackAlert&site=4', { method: 'POST' });
-    const json = await res.json();
-    if (json.ok) {
-      showToast('✅ บันทึกการรับทราบเหตุการณ์ (Acknowledge) ลง MySQL เรียบร้อยแล้ว', 'success');
-    }
-  } catch (err) {
-    console.warn('[AckAlert]', err);
-  }
-}
-
-function showEmergencyStrobe() {
-  document.body.classList.add('emergency-active');
-  const strobe = $('emergencyStrobeOverlay');
-  if (strobe) strobe.removeAttribute('hidden');
-}
-
-function hideEmergencyStrobe() {
-  document.body.classList.remove('emergency-active');
-  const strobe = $('emergencyStrobeOverlay');
-  if (strobe) strobe.setAttribute('hidden', 'true');
-}
-
 function toggleSoundAlert() {
   STATE.soundAlertEnabled = !STATE.soundAlertEnabled;
   const icon = $('soundAlertIcon'), txt = $('soundAlertText'), btn = $('soundAlertToggleBtn');
   if (STATE.soundAlertEnabled) {
     if (icon) icon.textContent = '🔔';
-    if (txt) txt.textContent = 'แจ้งเตือน: เปิด';
+    if (txt) txt.textContent = 'เสียงแจ้งเตือน: เปิด';
     if (btn) btn.classList.remove('muted');
-    showToast('🔔 เปิดระบบแจ้งเตือนและ Pop-Up เรียบร้อยแล้ว', 'info');
+    showToast('🔔 เปิดเสียงแจ้งเตือนเรียบร้อยแล้ว', 'info');
     restoreRealAlertCardState();
   } else {
     if (icon) icon.textContent = '🔕';
-    if (txt) txt.textContent = 'แจ้งเตือน: ปิด';
+    if (txt) txt.textContent = 'เสียงแจ้งเตือน: ปิด';
     if (btn) btn.classList.add('muted');
-    showToast('🔕 ปิดระบบแจ้งเตือนและ Pop-Up แล้ว', 'info');
+    showToast('🔕 ปิดเสียงแจ้งเตือนแล้ว', 'info');
     stopContinuousAlarm();
     stopTabAlertFlashing();
-    hideEmergencyStrobe();
     clearAlertCardPulses();
     dismissAlertBanner();
     closeAlertModal();
@@ -1225,31 +979,26 @@ function dismissAlertBanner() {
   restoreRealAlertCardState();
 }
 
-function closeAlertModal(resetAlertData = true) {
+function closeAlertModal() {
   const modal = $('alertModalOverlay');
   if (modal) { modal.setAttribute('hidden', 'true'); modal.style.display = 'none'; }
   stopContinuousAlarm();
   stopTabAlertFlashing();
-  hideEmergencyStrobe();
   restoreRealAlertCardState();
-  if (resetAlertData) {
-    STATE.currentAlertData = null;
-  }
+  // Sync acknowledge to DB in background
+  try {
+    fetch('proxy.php?action=ackAlert&site=4', { method: 'POST' }).catch(() => {});
+  } catch (e) {}
 }
 
-// Test trigger for Emergency Alert Pop-Up Modal
-function testAlertModal(type = 'critical') {
-  const isCrit = (type === 'critical');
-  const testVals = isCrit
-    ? { pm25: 58.5, pm10: 115.0, co2: 1520, temp: 32.5, humid: 78.0, evoc: 110 }
-    : { pm25: 42.0, pm10: 65.0, co2: 1100, temp: 29.5, humid: 68.0, evoc: 55 };
-
-  checkAirQualityAlerts(testVals.pm25, testVals.pm10, testVals.co2, testVals.temp, testVals.humid, testVals.evoc, true);
-  showToast(isCrit ? '🚨 จำลองสถานการณ์วิกฤต (Critical Emergency IT Support Mode)' : '⚠️ จำลองสถานการณ์เตือนภัย (Warning Mode)', 'info', 4000);
+// Test trigger for Alert Pop-Up Modal and Sound
+function testAlertModal() {
+  checkAirQualityAlerts(58.5, 115.0, 1520, 32.5, 78.0, 110, true);
+  showToast('🚨 ทดสอบเสียงแจ้งเตือนฉุกเฉินและ Pop-Up', 'info', 3500);
 }
 
 // ──────────────────────────────────────────────
-// Air Quality Threshold Alerts Check (Multi-Level Matrix)
+// Air Quality Threshold Alerts Check
 // ──────────────────────────────────────────────
 function checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc, isTest = false) {
   if (!STATE.soundAlertEnabled && !isTest) {
@@ -1279,7 +1028,7 @@ function checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc, isTest = fals
     } else if (v > warnThresh) {
       const valStr = def.format ? def.format(v) : `${v.toFixed(def.decimals)} ${def.unit}`;
       const limitStr = def.limitFmt ? def.limitFmt(warnThresh) : `> ${warnThresh}`;
-      warnList.push(`${def.shortName} เฝ้าระวัง (${valStr})`);
+      warnList.push(`${def.shortName} เกินเกณฑ์ (${valStr})`);
       alertDetails.push({ name: `${def.icon} ${def.name}`, val: valStr, limit: limitStr, isCrit: false });
       alertCards[def.key] = true;
     }
@@ -1299,22 +1048,15 @@ function checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc, isTest = fals
   const hasCritical = critList.length > 0;
   const hasWarning = warnList.length > 0;
 
-  STATE.currentAlertData = {
-    isCritical: hasCritical,
-    items: alertDetails,
-    summary: hasCritical ? critList.join(', ') : warnList.join(', ')
-  };
-
   if (hasCritical || hasWarning) {
-    const isSnoozed = Date.now() < STATE.snoozeUntil;
-
     if (bannerText) {
-      const tag = hasCritical ? '🚨 <span style="color:#ef4444;font-weight:800;">วิกฤตฉุกเฉิน (CRITICAL):</span>' : '⚠️ <strong>เฝ้าระวัง (WARNING):</strong>';
+      const tag = hasCritical ? '🚨 <span style="color:#ef4444;font-weight:800;">วิกฤตฉุกเฉิน:</span>' : '⚠️ <strong>เฝ้าระวัง:</strong>';
       const allMsgs = [...critList, ...warnList];
       bannerText.innerHTML = `${tag} ตรวจพบ <strong>${allMsgs.length} ดัชนี</strong> ผิดปกติ: <strong>${allMsgs.join(' • ')}</strong>`;
     }
     if (banner) { banner.removeAttribute('hidden'); banner.style.display = 'flex'; }
 
+    // Render values in modal
     if (modalList) {
       modalList.innerHTML = alertDetails.map(item => `
         <div class="alert-modal-item ${item.isCrit ? 'critical-item' : ''}">
@@ -1326,57 +1068,37 @@ function checkAirQualityAlerts(pm25, pm10, co2, temp, humid, evoc, isTest = fals
       `).join('');
     }
 
-    if (!isSnoozed) {
-      if (modal) { modal.removeAttribute('hidden'); modal.style.display = 'flex'; }
+    if (modal) { modal.removeAttribute('hidden'); modal.style.display = 'flex'; }
 
-      if (hasCritical) {
-        if (modalCard) modalCard.classList.add('critical-level');
-        if (modalBadge) {
-          modalBadge.textContent = '🚨 EMERGENCY IAQ CRITICAL ALERT';
-          modalBadge.style.background = 'linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)';
-        }
-        if (modalTitle) modalTitle.textContent = 'วิกฤตฉุกเฉิน! คุณภาพอากาศเกินเกณฑ์ระดับอันตราย';
-        if (modalIcon) modalIcon.textContent = '🚨';
-
-        // 1. Fullscreen strobe overlay
-        showEmergencyStrobe();
-        // 2. Start continuous audio siren
-        startContinuousCriticalAlarm();
-        // 3. Tab flashing
-        startTabAlertFlashing('🚨 [CRITICAL ALERT] คุณภาพอากาศเกินเกณฑ์วิกฤต!');
-        // 4. Windows Desktop Notification
-        sendDesktopNotification(
-          '🚨 [CRITICAL ALERT] ค่าคุณภาพอากาศเกินเกณฑ์วิกฤต!',
-          `Site 4 ตรวจพบดัชนีอันตราย: ${critList.join(', ')} กรุณาตรวจสอบทันที`,
-          'critical'
-        );
-      } else {
-        if (modalCard) modalCard.classList.remove('critical-level');
-        if (modalBadge) {
-          modalBadge.textContent = '⚠️ IAQ WARNING ALERT';
-          modalBadge.style.background = 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)';
-        }
-        if (modalTitle) modalTitle.textContent = 'แจ้งเตือนเฝ้าระวัง: ดัชนีอากาศเกินเกณฑ์มาตรฐาน';
-        if (modalIcon) modalIcon.textContent = '⚠️';
-
-        hideEmergencyStrobe();
-        stopContinuousAlarm();
-        playWarningChime();
-        startTabAlertFlashing('⚠️ [WARNING] ดัชนีอากาศเกินเกณฑ์เฝ้าระวัง');
-        sendDesktopNotification(
-          '⚠️ [WARNING] ดัชนีอากาศเกินเกณฑ์เฝ้าระวัง',
-          `Site 4 ตรวจพบดัชนีเฝ้าระวัง: ${warnList.join(', ')}`,
-          'warn'
-        );
+    if (hasCritical) {
+      if (modalCard) modalCard.classList.add('critical-level');
+      if (modalBadge) {
+        modalBadge.textContent = '🚨 EMERGENCY IAQ CRITICAL ALERT';
+        modalBadge.style.background = 'linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)';
       }
+      if (modalTitle) modalTitle.textContent = 'วิกฤตฉุกเฉิน! คุณภาพอากาศเกินเกณฑ์ระดับอันตราย';
+      if (modalIcon) modalIcon.textContent = '🚨';
+
+      startContinuousCriticalAlarm();
+      startTabAlertFlashing('🚨 [CRITICAL ALERT] คุณภาพอากาศเกินเกณฑ์วิกฤต!');
+    } else {
+      if (modalCard) modalCard.classList.remove('critical-level');
+      if (modalBadge) {
+        modalBadge.textContent = '⚠️ IAQ WARNING ALERT';
+        modalBadge.style.background = 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)';
+      }
+      if (modalTitle) modalTitle.textContent = 'แจ้งเตือนเฝ้าระวัง: ดัชนีอากาศเกินเกณฑ์มาตรฐาน';
+      if (modalIcon) modalIcon.textContent = '⚠️';
+
+      stopContinuousAlarm();
+      playWarningChime();
+      startTabAlertFlashing('⚠️ [WARNING] ดัชนีอากาศเกินเกณฑ์');
     }
   } else {
     if (banner) dismissAlertBanner();
     if (!isTest && modal) closeAlertModal();
-    hideEmergencyStrobe();
     stopContinuousAlarm();
     stopTabAlertFlashing();
-    cancelSnooze(true);
   }
 }
 
@@ -2747,7 +2469,6 @@ function downloadCSV() {
 document.addEventListener('DOMContentLoaded', () => {
   initServerTimeSync();
   checkAuthOnStartup();
-  initDesktopNotifications();
 
   // Unlock Web Audio API on first user gesture anywhere
   const unlockAudio = () => {
