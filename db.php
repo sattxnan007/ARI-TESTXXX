@@ -968,6 +968,20 @@ class IAQDatabase {
     }
 
     /**
+     * Acknowledge all active alerts for a site
+     */
+    public static function acknowledgeAllAlerts(string $siteId = '4'): bool {
+        $db = self::getConnection();
+        if (!$db) return false;
+        try {
+            $stmt = $db->prepare("UPDATE iaq_alerts SET status = 'ACKNOWLEDGED' WHERE site_id = :site AND status = 'ACTIVE'");
+            return $stmt->execute([':site' => $siteId]);
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * Get all monitored sites
      */
     public static function getAllSites(): array {

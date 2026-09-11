@@ -534,6 +534,7 @@ function handleGetSpecData(): void {
             'raw'        => $d,
             'history'    => getHistoryRecords(),
             'history45m' => get45MinCacheRecords(),
+            'alerts'     => IAQDatabase::getActiveAlerts((string)$siteId),
         ];
 
         saveToCache($cacheKey, $response);
@@ -1043,6 +1044,15 @@ switch ($action) {
     case 'logout':          handleLogout();       break;
     case 'getSpecData':     handleGetSpecData();  break;
     case 'getSiteData':     handleGetSiteData();  break;
+    case 'ackAlert':
+        $siteId = (string)($_POST['site'] ?? $_GET['site'] ?? '4');
+        $ok = IAQDatabase::acknowledgeAllAlerts($siteId);
+        echo json_encode(['ok' => $ok]);
+        break;
+    case 'getAlerts':
+        $siteId = (string)($_GET['site'] ?? '4');
+        echo json_encode(['ok' => true, 'alerts' => IAQDatabase::getActiveAlerts($siteId)]);
+        break;
     case 'getServerTime':
         echo json_encode(['ok' => true, 'serverTime' => getServerTimeMetadata()]);
         break;
