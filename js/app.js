@@ -48,15 +48,99 @@ const STATE = {
   },
   gaugeCharts: { pm10: null, co2: null, temp: null, humid: null },
   soundAlertEnabled: true,
+  // Server-Authoritative Time Synchronization
+  serverTimeOffset: 0,       // Estimated difference (serverNow - clientNow) in ms
+  lastServerSyncTime: null,  // Date of last authoritative server sync
+  serverTimezone: 'Asia/Bangkok',
+  // Database Time-Range Analytics & Selective Export
+  selectedRange: {
+    preset: '24h',
+    startTs: null,
+    endTs: null,
+    records: [],
+    stats: null,
+  },
 };
 
 // ──────────────────────────────────────────────
-// Utility helpers
+// Utility helpers & Server Clock Estimator
 // ──────────────────────────────────────────────
 function $(id) { return document.getElementById(id); }
 function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function rand(min, max, decimals = 1) { return parseFloat((Math.random() * (max - min) + min).toFixed(decimals)); }
+
+/**
+ * Synchronize local clock with Server-Authoritative Time
+ * Uses SNTP-like round-trip latency compensation to guarantee all devices in the organization are 100% in sync.
+ */
+function syncServerTime(serverTimeObj, roundTripMs = 0) {
+  if (!serverTimeObj || !serverTimeObj.timestampMs) return;
+  const clientNow = Date.now();
+  const estimatedServerNow = serverTimeObj.timestampMs + Math.round(roundTripMs / 2);
+  STATE.serverTimeOffset = estimatedServerNow - clientNow;
+  STATE.lastServerSyncTime = new Date(estimatedServerNow);
+  if (serverTimeObj.timezone) STATE.serverTimezone = serverTimeObj.timezone;
+  console.info(`[TimeSync] Server clock offset: ${STATE.serverTimeOffset}ms (RTT: ${roundTripMs}ms, Server: ${serverTimeObj.formatted})`);
+}
+
+/**
+ * Returns current Date object adjusted to official Server Time
+ */
+function getServerNow() {
+  return new Date(Date.now() + (STATE.serverTimeOffset || 0));
+}
+
+/**
+ * Formats Server Time as dd/mm/yyyy hh:mm:ss
+ */
+function getServerNowStr() {
+  const d = getServerNow();
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
+ * Authoritative now string (replaces client local clock)
+ */
+function nowStr() {
+  return getServerNowStr();
+}
+
+/**
+ * Initial fast sync with server time endpoint
+ */
+async function initServerTimeSync() {
+  try {
+    const t0 = performance.now();
+    const res = await fetch('proxy.php?action=getServerTime');
+    const rtt = Math.round(performance.now() - t0);
+    const json = await res.json();
+    if (json.ok && json.serverTime) {
+      syncServerTime(json.serverTime, rtt);
+    }
+  } catch (e) {
+    console.warn('[TimeSync init error]', e);
+  }
+  initAnalyticsDateInputs();
+}
+
+/**
+ * Seed historical chart from server Database records
+ */
+function syncHistoryFromDatabase(dbHistory) {
+  if (!Array.isArray(dbHistory) || dbHistory.length === 0) return;
+  if (STATE.historyLogs.length === 0) {
+    STATE.historyLogs = dbHistory.slice(-500);
+    STATE.historyLabels = STATE.historyLogs.map(l => l.label);
+    STATE.historyPM25   = STATE.historyLogs.map(l => l.pm25);
+    STATE.historyCO2    = STATE.historyLogs.map(l => l.co2);
+    STATE.historyTemp   = STATE.historyLogs.map(l => l.temp);
+    updateSessionStopwatch();
+    updateAnalyticsStats();
+    updateAllCharts();
+  }
+}
 
 function debounce(fn, ms) {
   let t;
@@ -68,12 +152,6 @@ function toggleEl(id, show, display = 'flex') {
   if (!el) return;
   el.hidden = !show;
   el.style.setProperty('display', show ? display : 'none', 'important');
-}
-
-function nowStr() {
-  const d = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function showToast(msg, type = 'info', duration = 3500) {
@@ -423,9 +501,15 @@ async function fetchData() {
         'PM2.5': pm25Val, 'PM10': pm10Val, 'CO2': co2Val,
         'RSSI': rssiVal, temp: tempVal, humid: humidVal, evoc: evocVal,
         lastUpdate: specUpd,
+        serverTime: spec.serverTime,
       };
 
-      // Continuously append each live reading to session history based on machine time
+      // Seed history from server database if local cache is empty
+      if (Array.isArray(spec.history) && spec.history.length > 0 && STATE.historyLogs.length === 0) {
+        syncHistoryFromDatabase(spec.history);
+      }
+
+      // Continuously append each live reading to session history based on server time
       appendHistory(STATE.site4Data);
 
       renderSiteDetail(STATE.site4Data);
@@ -442,13 +526,18 @@ async function fetchData() {
 }
 
 async function realFetchSite4() {
+  const t0 = performance.now();
   try {
     const res = await fetch(CONFIG.specDataUrl);
+    const roundTripMs = Math.round(performance.now() - t0);
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
     const json = await res.json();
     if (json.ok) {
+      if (json.serverTime) {
+        syncServerTime(json.serverTime, roundTripMs);
+      }
       if (json.fallback) {
         console.info('[getSpecData] Using latest cached telemetry snapshot (route: ' + (json.route || 'cached') + ')');
       }
@@ -491,13 +580,14 @@ async function mockFetchSite4() {
 }
 
 // ──────────────────────────────────────────────
-// History tracking (Synced with local machine time)
+// History tracking (Synced with Server-Authoritative Time)
 // ──────────────────────────────────────────────
 
 function appendHistory(data) {
   if (!data) return;
-  const nowTs = Date.now();
-  const label = new Date(nowTs).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const serverNow = getServerNow();
+  const nowTs = serverNow.getTime();
+  const label = serverNow.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const pm25Val = parseFloat(data['PM2.5'] ?? data.pm25 ?? 0);
   const pm10Val = parseFloat(data['PM10'] ?? data.pm10 ?? 0);
   const co2Val = parseFloat(data.CO2 ?? data.co2 ?? 0);
@@ -521,7 +611,7 @@ function appendHistory(data) {
   STATE.historyLogs.push({
     timestamp: nowTs,
     label,
-    time: `${new Date(nowTs).toLocaleDateString('th-TH')} ${label}`,
+    time: `${serverNow.toLocaleDateString('th-TH')} ${label}`,
     site: 'Site 4 - ICT401',
     pm25: pm25Val,
     pm10: pm10Val,
@@ -1101,9 +1191,8 @@ function initSessionTracking() {
   const isPowerActive = sessionStorage.getItem(SESSION_CACHE_KEYS.powerActive);
 
   if (!isPowerActive) {
-    // Machine rebooted / fresh browser power session!
-    // Start fresh count from 0, clear old cached chart logs
-    const now = Date.now();
+    // Fresh session initialized using Server-Authoritative Time!
+    const now = getServerNow().getTime();
     sessionStorage.setItem(SESSION_CACHE_KEYS.powerActive, String(now));
     localStorage.setItem(SESSION_CACHE_KEYS.startTime, String(now));
     localStorage.removeItem(SESSION_CACHE_KEYS.chartLogs);
@@ -1114,12 +1203,11 @@ function initSessionTracking() {
     STATE.historyPM25 = [];
     STATE.historyCO2 = [];
     STATE.historyTemp = [];
-    console.info('[Session] Fresh machine session initialized at', new Date(now).toLocaleTimeString());
+    console.info('[Session] Fresh session initialized at (Server Time)', getServerNow().toLocaleTimeString());
   } else {
-    // Machine still active (re-login or page refresh on same machine)!
-    // Restore session start time & cached chart data without restarting counter!
+    // Session still active (re-login or page refresh on same machine)!
     const savedStart = parseInt(localStorage.getItem(SESSION_CACHE_KEYS.startTime), 10);
-    STATE.sessionStartTime = savedStart && !isNaN(savedStart) ? savedStart : Date.now();
+    STATE.sessionStartTime = savedStart && !isNaN(savedStart) ? savedStart : getServerNow().getTime();
 
     try {
       const cached = JSON.parse(localStorage.getItem(SESSION_CACHE_KEYS.chartLogs) || '[]');
@@ -1129,7 +1217,7 @@ function initSessionTracking() {
         STATE.historyPM25 = cached.map(l => l.pm25);
         STATE.historyCO2 = cached.map(l => l.co2);
         STATE.historyTemp = cached.map(l => l.temp);
-        console.info('[Session] Resumed machine session from cache (' + cached.length + ' data points restored)');
+        console.info('[Session] Resumed session from cache (' + cached.length + ' data points restored)');
       }
     } catch (e) {
       console.warn('[Session] Failed to restore chart cache:', e);
@@ -1146,7 +1234,7 @@ function initSessionTracking() {
 
 function updateSessionStopwatch() {
   if (!STATE.sessionStartTime) return;
-  const elapsedMs = Math.max(0, Date.now() - STATE.sessionStartTime);
+  const elapsedMs = Math.max(0, getServerNow().getTime() - STATE.sessionStartTime);
   const totalSec = Math.floor(elapsedMs / 1000);
   const hours = String(Math.floor(totalSec / 3600)).padStart(2, '0');
   const minutes = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
@@ -1165,7 +1253,7 @@ function updateSessionStopwatch() {
 
 function resetSessionPrompt() {
   if (confirm('คุณต้องการรีเซ็ตเวลาและเริ่มนับรอบบันทึกข้อมูลกราฟใหม่สำหรับรอบนี้ใช่หรือไม่?')) {
-    const now = Date.now();
+    const now = getServerNow().getTime();
     sessionStorage.setItem(SESSION_CACHE_KEYS.powerActive, String(now));
     localStorage.setItem(SESSION_CACHE_KEYS.startTime, String(now));
     localStorage.removeItem(SESSION_CACHE_KEYS.chartLogs);
@@ -1183,6 +1271,422 @@ function resetSessionPrompt() {
     showToast('🔄 รีเซ็ตเวลาและเริ่มนับรอบกราฟใหม่เรียบร้อยแล้ว', 'success');
   }
 }
+
+// ──────────────────────────────────────────────
+// Database Historical Analytics, Day Stepper & Export Controller
+// ──────────────────────────────────────────────
+
+/**
+ * Returns formatted YYYY-MM-DD string adjusted to server time
+ */
+function getServerDateString(offsetDays = 0) {
+  const d = new Date(getServerNow().getTime() + offsetDays * 86400000);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatServerDate(d) {
+  const day = String(d.getDate()).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const y = d.getFullYear();
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${day}/${m}/${y} ${h}:${min}`;
+}
+
+function formatServerDateOnly(d) {
+  const day = String(d.getDate()).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const y = d.getFullYear();
+  return `${day}/${m}/${y}`;
+}
+
+/**
+ * Initialize date input values based on server time
+ */
+function initAnalyticsDateInputs() {
+  const todayStr = getServerDateString(0);
+  if (!STATE.analytics) {
+    STATE.analytics = {
+      mode: 'day',
+      selectedDate: todayStr,
+      startDate: getServerDateString(-7),
+      endDate: todayStr,
+      preset: 'today',
+      displayLabel: 'วันนี้',
+      records: [],
+      stats: null,
+    };
+  } else {
+    if (!STATE.analytics.selectedDate) STATE.analytics.selectedDate = todayStr;
+    if (!STATE.analytics.startDate) STATE.analytics.startDate = getServerDateString(-7);
+    if (!STATE.analytics.endDate) STATE.analytics.endDate = todayStr;
+  }
+
+  const singleInp = $('singleDateInput');
+  if (singleInp) {
+    singleInp.value = STATE.analytics.selectedDate || todayStr;
+    singleInp.max = todayStr;
+  }
+
+  const startInp = $('rangeStartDateInput');
+  const endInp = $('rangeEndDateInput');
+  if (startInp) {
+    startInp.value = STATE.analytics.startDate || getServerDateString(-7);
+    startInp.max = todayStr;
+  }
+  if (endInp) {
+    endInp.value = STATE.analytics.endDate || todayStr;
+    endInp.max = todayStr;
+  }
+
+  const clockEl = $('serverTimeClockDisplay');
+  if (clockEl) {
+    clockEl.textContent = formatServerDate(getServerNow());
+  }
+
+  const emptyTodayLabel = $('emptyStateTodayLabel');
+  if (emptyTodayLabel) {
+    emptyTodayLabel.textContent = formatServerDateOnly(getServerNow());
+  }
+}
+
+/**
+ * Switch analytics view mode between 'day' and 'range'
+ */
+function setAnalyticsMode(mode) {
+  if (!STATE.analytics) initAnalyticsDateInputs();
+  STATE.analytics.mode = mode;
+
+  const btnDay = $('btnModeDay');
+  const btnRange = $('btnModeRange');
+  const containerDay = $('modeDayContainer');
+  const containerRange = $('modeRangeContainer');
+
+  if (btnDay) btnDay.classList.toggle('active', mode === 'day');
+  if (btnRange) btnRange.classList.toggle('active', mode === 'range');
+
+  if (containerDay) containerDay.style.display = (mode === 'day') ? 'block' : 'none';
+  if (containerRange) containerRange.style.display = (mode === 'range') ? 'block' : 'none';
+
+  if (mode === 'day') {
+    if (!STATE.analytics.selectedDate) {
+      STATE.analytics.selectedDate = getServerDateString(0);
+    }
+  } else {
+    if (!STATE.analytics.startDate) {
+      STATE.analytics.startDate = getServerDateString(-7);
+      STATE.analytics.endDate = getServerDateString(0);
+      STATE.analytics.preset = '7d';
+    }
+  }
+
+  fetchAndRenderAnalyticsData();
+}
+
+/**
+ * Quick day selector ('today' | 'yesterday')
+ */
+function selectQuickDay(dayType) {
+  if (!STATE.analytics) initAnalyticsDateInputs();
+  STATE.analytics.mode = 'day';
+
+  const todayStr = getServerDateString(0);
+  const yesterdayStr = getServerDateString(-1);
+  const chosenDate = (dayType === 'yesterday') ? yesterdayStr : todayStr;
+
+  STATE.analytics.selectedDate = chosenDate;
+  STATE.analytics.preset = dayType;
+
+  // Sync mode switcher UI
+  const btnDay = $('btnModeDay');
+  const btnRange = $('btnModeRange');
+  if (btnDay) btnDay.classList.add('active');
+  if (btnRange) btnRange.classList.remove('active');
+  if ($('modeDayContainer')) $('modeDayContainer').style.display = 'block';
+  if ($('modeRangeContainer')) $('modeRangeContainer').style.display = 'none';
+
+  // Sync quick day buttons
+  const btnToday = $('btnQuickDayToday');
+  const btnYesterday = $('btnQuickDayYesterday');
+  if (btnToday) btnToday.classList.toggle('active', dayType === 'today');
+  if (btnYesterday) btnYesterday.classList.toggle('active', dayType === 'yesterday');
+
+  // Sync date input
+  const singleInp = $('singleDateInput');
+  if (singleInp) singleInp.value = chosenDate;
+
+  fetchAndRenderAnalyticsData();
+}
+
+/**
+ * When user selects a date from native date picker
+ */
+function onSingleDateChanged(dateVal) {
+  if (!dateVal) return;
+  if (!STATE.analytics) initAnalyticsDateInputs();
+
+  const todayStr = getServerDateString(0);
+  const yesterdayStr = getServerDateString(-1);
+
+  if (dateVal > todayStr) {
+    showToast('⚠️ ไม่สามารถเลือกวันที่ในอนาคตได้ ระบบปรับเป็นวันนี้ให้อัตโนมัติ', 'warn');
+    dateVal = todayStr;
+    const singleInp = $('singleDateInput');
+    if (singleInp) singleInp.value = dateVal;
+  }
+
+  STATE.analytics.mode = 'day';
+  STATE.analytics.selectedDate = dateVal;
+
+  if (dateVal === todayStr) {
+    STATE.analytics.preset = 'today';
+  } else if (dateVal === yesterdayStr) {
+    STATE.analytics.preset = 'yesterday';
+  } else {
+    STATE.analytics.preset = 'custom';
+  }
+
+  const btnToday = $('btnQuickDayToday');
+  const btnYesterday = $('btnQuickDayYesterday');
+  if (btnToday) btnToday.classList.toggle('active', dateVal === todayStr);
+  if (btnYesterday) btnYesterday.classList.toggle('active', dateVal === yesterdayStr);
+
+  fetchAndRenderAnalyticsData();
+}
+
+/**
+ * Step day forward (+1) or backward (-1)
+ */
+function stepDay(offset) {
+  if (!STATE.analytics) initAnalyticsDateInputs();
+  const cur = STATE.analytics.selectedDate || getServerDateString(0);
+  const parts = cur.split('-').map(Number);
+  const curDate = new Date(parts[0], parts[1] - 1, parts[2]);
+  curDate.setDate(curDate.getDate() + offset);
+
+  const y = curDate.getFullYear();
+  const m = String(curDate.getMonth() + 1).padStart(2, '0');
+  const d = String(curDate.getDate()).padStart(2, '0');
+  const targetDateStr = `${y}-${m}-${d}`;
+  const todayStr = getServerDateString(0);
+
+  if (targetDateStr > todayStr) {
+    showToast('⚠️ ไม่สามารถเลือกวันในอนาคตได้ (วันนี้เป็นวันล่าสุดแล้ว)', 'warn');
+    return;
+  }
+
+  const singleInp = $('singleDateInput');
+  if (singleInp) singleInp.value = targetDateStr;
+
+  onSingleDateChanged(targetDateStr);
+}
+
+/**
+ * Quick range preset selector ('7d', '30d', 'all')
+ */
+function selectQuickRangePreset(preset) {
+  if (!STATE.analytics) initAnalyticsDateInputs();
+  STATE.analytics.mode = 'range';
+  STATE.analytics.preset = preset;
+
+  document.querySelectorAll('.range-preset-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-preset') === preset);
+  });
+
+  const todayStr = getServerDateString(0);
+  if (preset === '7d') {
+    STATE.analytics.startDate = getServerDateString(-7);
+    STATE.analytics.endDate = todayStr;
+  } else if (preset === '30d') {
+    STATE.analytics.startDate = getServerDateString(-30);
+    STATE.analytics.endDate = todayStr;
+  } else if (preset === 'all') {
+    STATE.analytics.startDate = '';
+    STATE.analytics.endDate = todayStr;
+  }
+
+  const startInp = $('rangeStartDateInput');
+  const endInp = $('rangeEndDateInput');
+  if (startInp) startInp.value = STATE.analytics.startDate || '';
+  if (endInp) endInp.value = STATE.analytics.endDate || todayStr;
+
+  fetchAndRenderAnalyticsData();
+}
+
+/**
+ * Shortcut: Set Range End Date to Today
+ */
+function setRangeEndToToday() {
+  if (!STATE.analytics) initAnalyticsDateInputs();
+  const todayStr = getServerDateString(0);
+  STATE.analytics.endDate = todayStr;
+
+  const endInp = $('rangeEndDateInput');
+  if (endInp) endInp.value = todayStr;
+
+  const startInp = $('rangeStartDateInput');
+  if (startInp && !startInp.value) {
+    startInp.value = getServerDateString(-7);
+    STATE.analytics.startDate = startInp.value;
+  }
+
+  showToast('🎯 กำหนดวันสิ้นสุดเป็นวันนี้ (' + todayStr + ') เรียบร้อย', 'info');
+}
+
+/**
+ * Apply custom date range
+ */
+function applyCustomDateRange() {
+  if (!STATE.analytics) initAnalyticsDateInputs();
+  const startVal = $('rangeStartDateInput')?.value;
+  const endVal = $('rangeEndDateInput')?.value || getServerDateString(0);
+
+  if (!startVal) {
+    showToast('กรุณาระบุวันที่เริ่มต้น', 'warn');
+    return;
+  }
+
+  if (startVal > endVal) {
+    showToast('วันที่เริ่มต้นต้องไม่มากกว่าวันที่สิ้นสุด', 'warn');
+    return;
+  }
+
+  STATE.analytics.mode = 'range';
+  STATE.analytics.startDate = startVal;
+  STATE.analytics.endDate = endVal;
+  STATE.analytics.preset = 'custom';
+
+  document.querySelectorAll('.range-preset-btn').forEach(btn => btn.classList.remove('active'));
+
+  fetchAndRenderAnalyticsData();
+}
+
+/**
+ * Fetch telemetry data from database for selected day or range and update chart + stats
+ */
+async function fetchAndRenderAnalyticsData() {
+  if (!STATE.analytics) initAnalyticsDateInputs();
+
+  const mode = STATE.analytics.mode || 'day';
+  let url = 'proxy.php?action=getHistoryRange&site=4';
+
+  if (mode === 'day') {
+    const dateVal = STATE.analytics.selectedDate || getServerDateString(0);
+    url += `&date=${encodeURIComponent(dateVal)}`;
+  } else {
+    const p = STATE.analytics.preset;
+    if (p && p !== 'custom') {
+      url += `&preset=${encodeURIComponent(p)}`;
+    } else {
+      url += `&start=${encodeURIComponent(STATE.analytics.startDate || '')}&end=${encodeURIComponent(STATE.analytics.endDate || '')}`;
+    }
+  }
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+
+    if (json.ok) {
+      STATE.analytics.records = json.records || [];
+      STATE.analytics.stats = json.stats || {};
+      STATE.analytics.displayLabel = json.displayLabel || '';
+
+      // Sync backward-compatible selectedRange
+      STATE.selectedRange.records = json.records || [];
+      STATE.selectedRange.stats = json.stats || {};
+
+      // Update UI Labels & Badges
+      const activeLabelEl = $('activePeriodLabel');
+      if (activeLabelEl) activeLabelEl.textContent = json.displayLabel || (mode === 'day' ? STATE.analytics.selectedDate : 'ช่วงเวลาที่เลือก');
+
+      const countDisplay = $('analyticsCountDisplay');
+      if (countDisplay) countDisplay.textContent = json.count ?? 0;
+
+      const exportLabel = $('analyticsExportBtnLabel');
+      if (exportLabel) {
+        if (mode === 'day') {
+          exportLabel.textContent = `📥 ดาวน์โหลด CSV (${json.date || 'วันนี้'})`;
+        } else {
+          exportLabel.textContent = '📥 ดาวน์โหลด CSV ช่วงนี้';
+        }
+      }
+
+      const clockEl = $('serverTimeClockDisplay');
+      if (clockEl && json.serverTime && json.serverTime.formatted) {
+        clockEl.textContent = json.serverTime.formatted;
+      }
+
+      // Empty State Handling
+      const emptyCard = $('analyticsEmptyCard');
+      const chartWrap = $('analyticsChartWrap');
+      const hasData = json.count > 0;
+
+      if (emptyCard) emptyCard.style.display = hasData ? 'none' : 'flex';
+      if (chartWrap) chartWrap.style.display = hasData ? 'block' : 'none';
+
+      // Update dynamic chart title and subtitle
+      const chartTitleEl = $('chartMainTitle');
+      const chartSubEl = $('chartMainSubtitle');
+      if (chartTitleEl) {
+        chartTitleEl.textContent = mode === 'day'
+          ? `📈 กราฟวิเคราะห์คุณภาพอากาศ (${json.displayLabel || 'รายวัน'})`
+          : `📈 กราฟวิเคราะห์แนวโน้มคุณภาพอากาศ (${json.displayLabel || 'ช่วงเวลา'})`;
+      }
+      if (chartSubEl) {
+        chartSubEl.textContent = hasData
+          ? `แสดงผลข้อมูลจากฐานข้อมูล | มีทั้งหมด ${json.count} จุดข้อมูล | คลิกปุ่มเพื่อเปิด-ปิดแต่ละตัวแปร`
+          : `ไม่มีจุดข้อมูลที่บันทึกไว้ในระบบสำหรับช่วงเวลานี้`;
+      }
+
+      updateAnalyticsStats();
+      updateAnalyticsMainChart();
+    } else {
+      showToast('ไม่สามารถดึงข้อมูลได้: ' + (json.error || ''), 'error');
+    }
+  } catch (e) {
+    console.error('[fetchAndRenderAnalyticsData error]', e);
+    showToast('เกิดข้อผิดพลาดในการโหลดข้อมูลประวัติ', 'error');
+  }
+}
+
+/**
+ * Export CSV for the currently selected Day or Range
+ */
+function downloadCurrentAnalyticsCSV() {
+  if (!STATE.analytics) initAnalyticsDateInputs();
+  const mode = STATE.analytics.mode || 'day';
+  let url = 'proxy.php?action=exportCsv&site=4';
+
+  if (mode === 'day') {
+    url += `&date=${encodeURIComponent(STATE.analytics.selectedDate || getServerDateString(0))}`;
+  } else {
+    const p = STATE.analytics.preset;
+    if (p && p !== 'custom') {
+      url += `&preset=${encodeURIComponent(p)}`;
+    } else {
+      url += `&start=${encodeURIComponent(STATE.analytics.startDate || '')}&end=${encodeURIComponent(STATE.analytics.endDate || '')}`;
+    }
+  }
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.setAttribute('download', '');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  showToast('✅ กำลังดาวน์โหลดไฟล์ CSV สำหรับข้อมูลที่เลือก...', 'success');
+}
+
+// Backward-compatible alias functions
+function selectTimeRangePreset(p) { selectQuickRangePreset(p); }
+function applyCustomTimeRange() { applyCustomDateRange(); }
+function downloadRangeCSV() { downloadCurrentAnalyticsCSV(); }
+function fetchAndRenderRangeData() { fetchAndRenderAnalyticsData(); }
 
 function switchMainView(view) {
   STATE.currentMainView = view;
@@ -1214,8 +1718,13 @@ function switchMainView(view) {
           STATE.trendChart.resize();
         }
       } else {
-        updateAnalyticsStats();
-        updateAnalyticsMainChart();
+        const recs = (STATE.analytics && STATE.analytics.records) ? STATE.analytics.records : STATE.selectedRange.records;
+        if (!recs || recs.length === 0) {
+          fetchAndRenderAnalyticsData();
+        } else {
+          updateAnalyticsStats();
+          updateAnalyticsMainChart();
+        }
         if (STATE.analyticsMainChart) {
           STATE.analyticsMainChart.resize();
           STATE.analyticsMainChart.update('none');
@@ -1226,7 +1735,37 @@ function switchMainView(view) {
 }
 
 function updateAnalyticsStats() {
-  const logs = STATE.historyLogs;
+  const stats = (STATE.analytics && STATE.analytics.stats) ? STATE.analytics.stats : STATE.selectedRange.stats;
+  const logs = (STATE.analytics && STATE.analytics.records && STATE.analytics.records.length > 0)
+    ? STATE.analytics.records
+    : ((STATE.selectedRange && STATE.selectedRange.records && STATE.selectedRange.records.length > 0)
+        ? STATE.selectedRange.records
+        : STATE.historyLogs);
+
+  const setT = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+
+  // If server-aggregated stats are available from database, use them
+  if (stats && stats.total_samples && parseInt(stats.total_samples, 10) > 0) {
+    setT('stat-pm25-avg', stats.avg_pm25 ?? '—');
+    setT('stat-pm25-max', stats.max_pm25 ?? '—');
+    setT('stat-pm25-min', stats.min_pm25 ?? '—');
+
+    setT('stat-pm10-avg', stats.avg_pm10 ?? '—');
+    setT('stat-pm10-max', stats.max_pm10 ?? '—');
+    setT('stat-pm10-min', stats.min_pm10 ?? '—');
+
+    setT('stat-co2-avg', stats.avg_co2 ? Math.round(stats.avg_co2) : '—');
+    setT('stat-co2-max', stats.max_co2 ? Math.round(stats.max_co2) : '—');
+    setT('stat-co2-min', stats.min_co2 ? Math.round(stats.min_co2) : '—');
+
+    setT('stat-temp-avg', stats.avg_temp ?? '—');
+    setT('stat-temp-max', stats.max_temp ? `${stats.max_temp}°C` : '—');
+    setT('stat-humid-avg', stats.avg_humid ?? '—');
+    setT('stat-humid-max', stats.max_humid ? `${stats.max_humid}%` : '—');
+    return;
+  }
+
+  // Fallback if no logs
   if (!logs || logs.length === 0) {
     const d = STATE.site4Data;
     if (d) {
@@ -1236,7 +1775,6 @@ function updateAnalyticsStats() {
       const temp = parseFloat(d.temp ?? 0);
       const humid = parseFloat(d.humid ?? 0);
 
-      const setT = (id, val) => { const el = $(id); if (el) el.textContent = val; };
       setT('stat-pm25-avg', pm25.toFixed(1));
       setT('stat-pm25-max', pm25.toFixed(1));
       setT('stat-pm25-min', pm25.toFixed(1));
@@ -1252,7 +1790,7 @@ function updateAnalyticsStats() {
       setT('stat-temp-avg', temp.toFixed(1));
       setT('stat-temp-max', `${temp.toFixed(1)}°C`);
       setT('stat-humid-avg', humid.toFixed(1));
-      setT('stat-humid-max', `${max(humidArr).toFixed(1)}%`);
+      setT('stat-humid-max', `${humid.toFixed(1)}%`);
     }
     return;
   }
@@ -1266,8 +1804,6 @@ function updateAnalyticsStats() {
   const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
   const max = arr => arr.length ? Math.max(...arr) : 0;
   const min = arr => arr.length ? Math.min(...arr) : 0;
-
-  const setT = (id, val) => { const el = $(id); if (el) el.textContent = val; };
 
   setT('stat-pm25-avg', avg(pm25Arr).toFixed(1));
   setT('stat-pm25-max', max(pm25Arr).toFixed(1));
@@ -1353,14 +1889,40 @@ function updateAnalyticsMainChart() {
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const textColor = isDark ? '#94A3B8' : '#475569';
   const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const logs = STATE.historyLogs;
-  const labels = logs.map(l => l.label);
+
+  // Use selected range records from Database if available, otherwise fall back to session history
+  const logs = (STATE.analytics && STATE.analytics.records)
+    ? STATE.analytics.records
+    : ((STATE.selectedRange && STATE.selectedRange.records && STATE.selectedRange.records.length > 0)
+        ? STATE.selectedRange.records
+        : STATE.historyLogs);
+
+  const emptyCard = $('analyticsEmptyCard');
+  const chartWrap = $('analyticsChartWrap');
+  if (!logs || logs.length === 0) {
+    if (emptyCard) emptyCard.style.display = 'flex';
+    if (chartWrap) chartWrap.style.display = 'none';
+    if (STATE.analyticsMainChart) {
+      STATE.analyticsMainChart.destroy();
+      STATE.analyticsMainChart = null;
+    }
+    return;
+  } else {
+    if (emptyCard) emptyCard.style.display = 'none';
+    if (chartWrap) chartWrap.style.display = 'block';
+  }
+
+  const isDayMode = (STATE.analytics && STATE.analytics.mode === 'day');
+  const labels = logs.map(l => (isDayMode && l.timeLabel) ? l.timeLabel : l.label);
   const pm25Data = logs.map(l => l.pm25);
   const pm10Data = logs.map(l => l.pm10);
   const co2Data = logs.map(l => l.co2);
   const tempData = logs.map(l => l.temp);
   const humidData = logs.map(l => l.humid);
   const evocData = logs.map(l => l.evoc);
+
+  // Dynamic point radius: if few points (e.g. today just started), show dots clearly
+  const ptRadius = logs.length <= 25 ? 4 : (logs.length <= 60 ? 2 : 0);
 
   const datasets = [
     {
@@ -1371,7 +1933,7 @@ function updateAnalyticsMainChart() {
       borderColor: '#0D9488',
       backgroundColor: 'rgba(13,148,136,0.08)',
       borderWidth: 2.5,
-      pointRadius: 0,
+      pointRadius: ptRadius,
       pointHoverRadius: 6,
       pointHitRadius: 12,
       fill: false,
@@ -1385,7 +1947,7 @@ function updateAnalyticsMainChart() {
       yAxisID: 'y',
       borderColor: '#06B6D4',
       borderWidth: 2.2,
-      pointRadius: 0,
+      pointRadius: ptRadius,
       pointHoverRadius: 6,
       pointHitRadius: 12,
       fill: false,
@@ -1399,7 +1961,7 @@ function updateAnalyticsMainChart() {
       yAxisID: 'yCO2',
       borderColor: '#3B82F6',
       borderWidth: 2.5,
-      pointRadius: 0,
+      pointRadius: ptRadius,
       pointHoverRadius: 6,
       pointHitRadius: 12,
       fill: false,
@@ -1413,7 +1975,7 @@ function updateAnalyticsMainChart() {
       yAxisID: 'y',
       borderColor: '#F59E0B',
       borderWidth: 2.2,
-      pointRadius: 0,
+      pointRadius: ptRadius,
       pointHoverRadius: 6,
       pointHitRadius: 12,
       fill: false,
@@ -1427,7 +1989,7 @@ function updateAnalyticsMainChart() {
       yAxisID: 'yHumid',
       borderColor: '#0284C7',
       borderWidth: 2.2,
-      pointRadius: 0,
+      pointRadius: ptRadius,
       pointHoverRadius: 6,
       pointHitRadius: 12,
       fill: false,
@@ -1441,7 +2003,7 @@ function updateAnalyticsMainChart() {
       yAxisID: 'y',
       borderColor: '#8B5CF6',
       borderWidth: 2.2,
-      pointRadius: 0,
+      pointRadius: ptRadius,
       pointHoverRadius: 6,
       pointHitRadius: 12,
       fill: false,
@@ -1714,6 +2276,7 @@ function downloadCSV() {
 // Initializer (single resize listener with debounce)
 // ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  initServerTimeSync();
   checkAuthOnStartup();
   window.addEventListener('resize', debounce(() => { if (STATE.site4Data) refreshGauges(); }, 200));
 });

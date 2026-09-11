@@ -7,6 +7,10 @@
 
 header('Content-Type: text/html; charset=utf-8');
 
+// ---- Database & Time Sync Diagnostics ----
+require_once __DIR__ . '/db.php';
+$dbDiag = IAQDatabase::getDiagnostics();
+
 // ---- Server Diagnostic Checks ----
 $curlEnabled   = extension_loaded('curl');
 $tempWritable  = is_writable(sys_get_temp_dir());
@@ -348,6 +352,55 @@ if ($testProxy1['success']) {
       </div>
     </div>
     <?php endif; ?>
+
+    <!-- Database & Server Time Sync Diagnostic Details -->
+    <div class="card">
+      <div class="card-title">🗄️ ระบบฐานข้อมูลและเวลามาตรฐานเซิร์ฟเวอร์ (Database & Server-Authoritative Time)</div>
+      <table>
+        <tr>
+          <th>สถานะฐานข้อมูล (Database Status)</th>
+          <td>
+            <?= ($dbDiag['ok'] ?? false)
+              ? '<span class="status-badge badge-ok">CONNECTED (' . strtoupper(htmlspecialchars($dbDiag['activeDriver'] ?? 'SQLITE')) . ')</span>' 
+              : '<span class="status-badge badge-err">ERROR / DISCONNECTED</span>' ?>
+            <a href="db_setup.php" style="margin-left: 10px; font-size: 0.85rem; font-weight: 600; color: #0284C7; text-decoration: none;">⚙️ เปิด Database Studio</a>
+          </td>
+        </tr>
+        <tr>
+          <th>เป้าหมาย MySQL (Target Server)</th>
+          <td>
+            <strong><?= htmlspecialchars($dbDiag['mysqlHost'] ?? '10.7.1.95') ?>:<?= htmlspecialchars((string)($dbDiag['mysqlPort'] ?? 3306)) ?></strong>
+            &raquo; ฐานข้อมูล: <code style="background:#E2E8F0; padding:2px 6px; border-radius:4px;"><?= htmlspecialchars($dbDiag['mysqlDatabase'] ?? 'air_quality_db') ?></code>
+            <?php if (!empty($dbDiag['connectionError'])): ?>
+              <br><span style="color:#C5221F; font-size:0.85rem;">⚠️ MySQL Notice: <?= htmlspecialchars($dbDiag['connectionError']) ?> (ใช้ SQLite สำรองชั่วคราว)</span>
+            <?php endif; ?>
+          </td>
+        </tr>
+        <tr>
+          <th>ไฟล์เก็บข้อมูลสำรอง (SQLite Path)</th>
+          <td><?= htmlspecialchars($dbDiag['sqliteFile'] ?? 'N/A') ?> (<?= number_format(($dbDiag['sqliteFileSize'] ?? 0) / 1024, 1) ?> KB)</td>
+        </tr>
+        <tr>
+          <th>ข้อมูลตรวจวัดสด (Live Telemetry Records)</th>
+          <td><strong><?= number_format($dbDiag['telemetryCount'] ?? 0) ?></strong> จุดข้อมูลใน Database</td>
+        </tr>
+        <tr>
+          <th>สแนปช็อตระยะยาว (45-Minute Snapshots)</th>
+          <td><strong><?= number_format($dbDiag['snapshotCount'] ?? 0) ?></strong> สแนปช็อตใน Database</td>
+        </tr>
+        <tr>
+          <th>เวลาเซิร์ฟเวอร์มาตรฐาน (Authoritative Server Time)</th>
+          <td>
+            <strong><?= htmlspecialchars($dbDiag['serverTime'] ?? date('Y-m-d H:i:s')) ?></strong> 
+            (Timestamp: <?= htmlspecialchars((string)($dbDiag['serverTimeSec'] ?? time())) ?> | Timezone: <strong><?= htmlspecialchars($dbDiag['timezone'] ?? 'Asia/Bangkok') ?></strong>)
+          </td>
+        </tr>
+        <tr>
+          <th>การกระจายเวลา (Time Sync Model)</th>
+          <td><span class="status-badge badge-ok">SERVER-AUTHORITATIVE (Single Source of Truth)</span></td>
+        </tr>
+      </table>
+    </div>
 
     <!-- System Diagnostic Details -->
     <div class="card">

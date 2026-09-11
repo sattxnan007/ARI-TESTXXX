@@ -331,116 +331,232 @@
       <!-- Dedicated Analytics View Panel -->
       <div class="room-panel" id="panel-analytics" style="display:none;">
         
-        <!-- Session Status & Control Bar -->
-        <div class="glass-panel session-control-bar">
-          <div class="session-info-group">
-            <div class="session-pulse-indicator">
-              <span class="pulse-ring"></span>
-              <span class="pulse-center"></span>
+        <!-- Unified Analytics Header & Time Range Command Bar -->
+        <div class="glass-panel analytics-control-card">
+          <!-- Top Row: Title, Badges, and Primary CSV Export -->
+          <div class="analytics-control-header">
+            <div class="analytics-title-group">
+              <div class="analytics-title-icon">📊</div>
+              <div>
+                <div class="analytics-title-text">ศูนย์วิเคราะห์ประวัติและกราฟคุณภาพอากาศ (Air Quality History &amp; Analytics)</div>
+                <div class="analytics-subtitle-text">เลือกดูข้อมูลเจาะจงรายวัน หรือเลือกดูช่วงวันที่ เพื่อวิเคราะห์และส่งออกรายงาน CSV</div>
+              </div>
             </div>
-            <div>
-              <div class="session-time-label">⏱️ ระยะเวลาที่มอนิเตอร์ในรอบนี้ (Session Uptime)</div>
-              <div class="session-time-val" id="sessionStopwatch">00:00:00</div>
-            </div>
-            <div class="session-meta-pill">
-              <span id="sessionPointsCount">0 จุดข้อมูล</span>
+            <div class="analytics-header-actions">
+              <!-- Live DB Status Chip -->
+              <span class="analytics-status-chip db-chip" id="dbStatusBadge">
+                <span class="status-indicator-dot dot-teal"></span> 🗄️ SQLite Database
+              </span>
+              <!-- Record Count Badge -->
+              <span class="analytics-status-chip count-chip" id="rangeRecordsCountBadge">
+                📊 <strong id="analyticsCountDisplay">0</strong> จุดข้อมูล
+              </span>
+              <!-- Server Time Chip -->
+              <span class="analytics-status-chip time-chip" title="เวลาอ้างอิงของเซิร์ฟเวอร์">
+                ⏱️ <span id="serverTimeClockDisplay">—</span>
+              </span>
+              <!-- Main Export CSV Button -->
+              <button type="button" class="btn-analytics-export" onclick="downloadCurrentAnalyticsCSV()" title="ดาวน์โหลดไฟล์ CSV สำหรับวันที่หรือช่วงเวลานี้">
+                <span id="analyticsExportBtnLabel">📥 ดาวน์โหลด CSV วันนี้</span>
+              </button>
             </div>
           </div>
 
-          <div class="session-actions-group">
-            <button class="btn-session-action" onclick="resetSessionPrompt()" title="เริ่มนับรอบเวลาและล้างแคชกราฟรอบใหม่">
-              🔄 เริ่มนับรอบใหม่
+          <!-- Divider -->
+          <div class="analytics-control-divider"></div>
+
+          <!-- Mode Selector Tabs (Single Day vs Date Range) -->
+          <div class="analytics-mode-switcher">
+            <button type="button" class="analytics-mode-btn active" id="btnModeDay" onclick="setAnalyticsMode('day')">
+              <span>📅 เลือกดูเจาะจงตามวัน (Single Day)</span>
             </button>
-            <button class="btn-session-action btn-session-primary" onclick="downloadCSV()" title="ดาวน์โหลดประวัติข้อมูลเป็น CSV">
-              📥 ดาวน์โหลด CSV
+            <button type="button" class="analytics-mode-btn" id="btnModeRange" onclick="setAnalyticsMode('range')">
+              <span>📆 เลือกดูช่วงวันที่ (Date Range)</span>
             </button>
           </div>
+
+          <!-- Mode 1: Single Day Selection Container -->
+          <div class="analytics-mode-container" id="modeDayContainer">
+            <div class="filter-toolbar-row">
+              <!-- Quick Day Buttons -->
+              <div class="quick-days-group">
+                <button type="button" class="quick-day-btn active" id="btnQuickDayToday" onclick="selectQuickDay('today')">
+                  🟢 วันนี้ (Today)
+                </button>
+                <button type="button" class="quick-day-btn" id="btnQuickDayYesterday" onclick="selectQuickDay('yesterday')">
+                  ⚪ เมื่อวาน (Yesterday)
+                </button>
+              </div>
+
+              <!-- Day Stepper & Native Date Picker -->
+              <div class="day-stepper-group">
+                <button type="button" class="btn-stepper-nav" onclick="stepDay(-1)" title="วันก่อนหน้า">
+                  ◀ วันก่อนหน้า
+                </button>
+                <div class="date-input-wrap">
+                  <label for="singleDateInput" class="input-label-compact">เลือกวันที่:</label>
+                  <input type="date" id="singleDateInput" class="styled-date-picker" onchange="onSingleDateChanged(this.value)" />
+                </div>
+                <button type="button" class="btn-stepper-nav" id="btnStepNextDay" onclick="stepDay(1)" title="วันถัดไป">
+                  วันถัดไป ▶
+                </button>
+              </div>
+
+              <!-- Active Status Display -->
+              <div class="active-period-badge">
+                🗓️ กำลังแสดงข้อมูล: <strong id="activePeriodLabel">วันนี้</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mode 2: Date Range Selection Container -->
+          <div class="analytics-mode-container" id="modeRangeContainer" style="display:none;">
+            <div class="filter-toolbar-row">
+              <!-- Quick Range Presets -->
+              <div class="quick-range-group">
+                <span class="filter-section-label">ช่วงเวลาด่วน:</span>
+                <div class="preset-pill-group">
+                  <button type="button" class="preset-pill range-preset-btn" data-preset="7d" onclick="selectQuickRangePreset('7d')">7 วันล่าสุด</button>
+                  <button type="button" class="preset-pill range-preset-btn" data-preset="30d" onclick="selectQuickRangePreset('30d')">30 วันล่าสุด</button>
+                  <button type="button" class="preset-pill range-preset-btn" data-preset="all" onclick="selectQuickRangePreset('all')">ทั้งหมดในระบบ</button>
+                </div>
+              </div>
+
+              <!-- Custom Range Pickers -->
+              <div class="range-pickers-group">
+                <div class="range-date-item">
+                  <label for="rangeStartDateInput">จากวันที่:</label>
+                  <input type="date" id="rangeStartDateInput" class="styled-date-picker" />
+                </div>
+                <span class="date-sep">ถึง</span>
+                <div class="range-date-item">
+                  <label for="rangeEndDateInput">ถึงวันที่:</label>
+                  <input type="date" id="rangeEndDateInput" class="styled-date-picker" />
+                </div>
+                <button type="button" class="btn-range-today-shortcut" onclick="setRangeEndToToday()" title="ตั้งวันสิ้นสุดเป็นวันนี้">
+                  🎯 ถึงวันนี้
+                </button>
+                <button type="button" class="btn-custom-filter" onclick="applyCustomDateRange()" title="ค้นหาและสร้างกราฟ">
+                  🔍 ค้นหาและสร้างกราฟ
+                </button>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <!-- Metric Statistics Cards (Summary Cards) -->
         <div class="analytics-stat-grid">
           <!-- Card 1: PM2.5 -->
-          <div class="glass-panel stat-card">
+          <div class="glass-panel stat-card stat-pm25">
             <div class="stat-card-header">
               <span class="stat-icon-wrap icon-teal">🌫️</span>
-              <span class="stat-card-name">PM2.5 สถิติในรอบนี้</span>
+              <div class="stat-meta">
+                <span class="stat-metric-title">PM2.5 สถิติช่วงนี้</span>
+                <span class="stat-badge-unit">µg/m³</span>
+              </div>
             </div>
             <div class="stat-card-body">
-              <div class="stat-main-metric">
-                <span class="stat-main-num" id="stat-pm25-avg">—</span>
-                <span class="stat-main-unit">µg/m³ (เฉลี่ย)</span>
-              </div>
-              <div class="stat-sub-row">
-                <span>สูงสุด: <strong id="stat-pm25-max">—</strong></span>
-                <span>ต่ำสุด: <strong id="stat-pm25-min">—</strong></span>
+              <div class="stat-hero-num" id="stat-pm25-avg">—</div>
+              <div class="stat-hero-label">ค่าเฉลี่ยในช่วงเวลา (Average)</div>
+              <div class="stat-sub-grid">
+                <div class="stat-sub-box">
+                  <span class="sub-label">สูงสุด (Max)</span>
+                  <span class="sub-val" id="stat-pm25-max">—</span>
+                </div>
+                <div class="stat-sub-box">
+                  <span class="sub-label">ต่ำสุด (Min)</span>
+                  <span class="sub-val" id="stat-pm25-min">—</span>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Card 2: PM10 -->
-          <div class="glass-panel stat-card">
+          <div class="glass-panel stat-card stat-pm10">
             <div class="stat-card-header">
               <span class="stat-icon-wrap icon-cyan">💨</span>
-              <span class="stat-card-name">PM10 สถิติในรอบนี้</span>
+              <div class="stat-meta">
+                <span class="stat-metric-title">PM10 สถิติช่วงนี้</span>
+                <span class="stat-badge-unit">µg/m³</span>
+              </div>
             </div>
             <div class="stat-card-body">
-              <div class="stat-main-metric">
-                <span class="stat-main-num" id="stat-pm10-avg">—</span>
-                <span class="stat-main-unit">µg/m³ (เฉลี่ย)</span>
-              </div>
-              <div class="stat-sub-row">
-                <span>สูงสุด: <strong id="stat-pm10-max">—</strong></span>
-                <span>ต่ำสุด: <strong id="stat-pm10-min">—</strong></span>
+              <div class="stat-hero-num" id="stat-pm10-avg">—</div>
+              <div class="stat-hero-label">ค่าเฉลี่ยในช่วงเวลา (Average)</div>
+              <div class="stat-sub-grid">
+                <div class="stat-sub-box">
+                  <span class="sub-label">สูงสุด (Max)</span>
+                  <span class="sub-val" id="stat-pm10-max">—</span>
+                </div>
+                <div class="stat-sub-box">
+                  <span class="sub-label">ต่ำสุด (Min)</span>
+                  <span class="sub-val" id="stat-pm10-min">—</span>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Card 3: CO2 -->
-          <div class="glass-panel stat-card">
+          <div class="glass-panel stat-card stat-co2">
             <div class="stat-card-header">
               <span class="stat-icon-wrap icon-blue">☁️</span>
-              <span class="stat-card-name">CO2 สถิติในรอบนี้</span>
+              <div class="stat-meta">
+                <span class="stat-metric-title">CO2 สถิติช่วงนี้</span>
+                <span class="stat-badge-unit">ppm</span>
+              </div>
             </div>
             <div class="stat-card-body">
-              <div class="stat-main-metric">
-                <span class="stat-main-num" id="stat-co2-avg">—</span>
-                <span class="stat-main-unit">ppm (เฉลี่ย)</span>
-              </div>
-              <div class="stat-sub-row">
-                <span>สูงสุด: <strong id="stat-co2-max">—</strong></span>
-                <span>ต่ำสุด: <strong id="stat-co2-min">—</strong></span>
+              <div class="stat-hero-num" id="stat-co2-avg">—</div>
+              <div class="stat-hero-label">ค่าเฉลี่ยในช่วงเวลา (Average)</div>
+              <div class="stat-sub-grid">
+                <div class="stat-sub-box">
+                  <span class="sub-label">สูงสุด (Max)</span>
+                  <span class="sub-val" id="stat-co2-max">—</span>
+                </div>
+                <div class="stat-sub-box">
+                  <span class="sub-label">ต่ำสุด (Min)</span>
+                  <span class="sub-val" id="stat-co2-min">—</span>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Card 4: Climate -->
-          <div class="glass-panel stat-card">
+          <div class="glass-panel stat-card stat-climate">
             <div class="stat-card-header">
               <span class="stat-icon-wrap icon-orange">🌡️</span>
-              <span class="stat-card-name">อุณหภูมิ &amp; ความชื้นเฉลี่ย</span>
+              <div class="stat-meta">
+                <span class="stat-metric-title">อุณหภูมิ &amp; ความชื้น</span>
+                <span class="stat-badge-unit">°C / %RH</span>
+              </div>
             </div>
             <div class="stat-card-body">
-              <div class="stat-main-metric">
-                <span class="stat-main-num" id="stat-temp-avg">—</span>
-                <span class="stat-main-unit">°C / <span id="stat-humid-avg">—</span>%</span>
-              </div>
-              <div class="stat-sub-row">
-                <span>Temp สูงสุด: <strong id="stat-temp-max">—</strong></span>
-                <span>Humid สูงสุด: <strong id="stat-humid-max">—</strong></span>
+              <div class="stat-hero-num"><span id="stat-temp-avg">—</span>°C <span class="stat-climate-slash">/</span> <span id="stat-humid-avg">—</span>%</div>
+              <div class="stat-hero-label">ค่าเฉลี่ยในช่วงเวลา (Average)</div>
+              <div class="stat-sub-grid">
+                <div class="stat-sub-box">
+                  <span class="sub-label">Temp สูงสุด</span>
+                  <span class="sub-val" id="stat-temp-max">—</span>
+                </div>
+                <div class="stat-sub-box">
+                  <span class="sub-label">Humid สูงสุด</span>
+                  <span class="sub-val" id="stat-humid-max">—</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Unified Air Analytics Interactive Chart -->
-        <div class="unified-chart-card">
+        <div class="glass-panel unified-chart-card">
           <div class="unified-chart-header">
             <div class="unified-chart-title-wrap">
               <div class="unified-chart-title">
-                <span>📈 กราฟวิเคราะห์แนวโน้มคุณภาพอากาศรวม (Unified Air Analytics)</span>
+                <span id="chartMainTitle">📈 กราฟวิเคราะห์แนวโน้มคุณภาพอากาศ</span>
               </div>
-              <div class="unified-chart-sub">
-                บันทึกตามเวลาเครื่องคอมพิวเตอร์นับตั้งแต่เข้าสู่ระบบ | คลิกที่ปุ่มเพื่อเปิด-ปิดแสดงผลแต่ละตัวแปร
+              <div class="unified-chart-sub" id="chartMainSubtitle">
+                แสดงผลข้อมูลย้อนหลังจากฐานข้อมูลตามวันที่/ช่วงเวลาที่เลือก | คลิกที่ปุ่มเพื่อเปิด-ปิดแสดงผลแต่ละตัวแปร
               </div>
             </div>
 
@@ -470,7 +586,22 @@
             </div>
           </div>
 
-          <div class="unified-chart-canvas-wrap">
+          <!-- Empty State Card (Shown when selected date has no records) -->
+          <div class="analytics-empty-card" id="analyticsEmptyCard" style="display:none;">
+            <div class="empty-card-icon">📭</div>
+            <div class="empty-card-content">
+              <div class="empty-card-title">ไม่มีข้อมูลบันทึกในวันที่เลือก</div>
+              <div class="empty-card-desc">
+                ระบบเริ่มบันทึกข้อมูลตั้งแต่วันนี้ (<strong id="emptyStateTodayLabel">08/09/2026</strong>) เป็นต้นไป
+                หากต้องการดูข้อมูลปัจจุบัน กรุณาคลิกปุ่มด้านล่างเพื่อกลับไปดูข้อมูลของวันนี้
+              </div>
+              <button type="button" class="btn-empty-action" onclick="selectQuickDay('today')">
+                📅 กลับไปดูข้อมูลวันนี้
+              </button>
+            </div>
+          </div>
+
+          <div class="unified-chart-canvas-wrap" id="analyticsChartWrap">
             <canvas id="analyticsMainChart"></canvas>
           </div>
         </div>

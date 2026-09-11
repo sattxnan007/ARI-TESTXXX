@@ -1,0 +1,9 @@
+# Temporary SQLite DB & Journal files
+data/*.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm
+data/*.sqlite-journal
+
+# PHP temporary sessions & cookies
+cookie_*.txt
+aiir_active_route.json

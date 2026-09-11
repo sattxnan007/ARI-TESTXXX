@@ -22,6 +22,26 @@ if (session_status() === PHP_SESSION_NONE) {
     @session_start();
 }
 
+// ---- Database & Timezone Configuration ----
+require_once __DIR__ . '/db.php';
+date_default_timezone_set('Asia/Bangkok');
+
+/**
+ * Server-Authoritative Time Metadata Helper
+ * Provides a single source of truth for timestamps across the entire organization.
+ */
+function getServerTimeMetadata(): array {
+    $nowTs = time();
+    return [
+        'timestampSec' => $nowTs,
+        'timestampMs'  => $nowTs * 1000,
+        'iso'          => date('c', $nowTs),
+        'formatted'    => date('d/m/Y H:i:s', $nowTs),
+        'timezone'     => date_default_timezone_get(),
+        'syncInterval' => 30, // Default refresh interval in seconds
+    ];
+}
+
 // ---- Configurations ----
 define('AIIR_BASE', 'https://emtrontech.com/AIIR/');
 define('CACHE_TTL', 5);             // 5 seconds cache TTL for sensor telemetries
@@ -308,6 +328,13 @@ function saveHistoryRecord(array $data): void {
     $file = getHistoryFile();
     $maxRecords = 2000;
 
+    // 1. Primary storage: SQLite / MySQL via IAQDatabase
+    IAQDatabase::insertTelemetry($data);
+
+    // 2. Legacy fallback file for backward compatibility
+    $file = getHistoryFile();
+    $maxRecords = 2000;
+
     $history = [];
     if (file_exists($file)) {
         $content = @file_get_contents($file);
@@ -348,7 +375,14 @@ function saveHistoryRecord(array $data): void {
     @file_put_contents($file, json_encode($history), LOCK_EX);
 }
 
-function getHistoryRecords(): array {
+function getHistoryRecords(int $limit = 50): array {
+    // 1. Try reading from Database
+    $dbHistory = IAQDatabase::getRecentHistory($limit);
+    if (!empty($dbHistory)) {
+        return $dbHistory;
+    }
+
+    // 2. Fallback to legacy file
     $file = getHistoryFile();
     if (!file_exists($file)) return [];
     $content = @file_get_contents($file);
@@ -362,6 +396,11 @@ function get45MinCacheFile(): string {
 
 function save45MinCacheRecord(array $data): void {
     if (empty($data['ok'])) return;
+
+    // 1. Primary storage: SQLite / MySQL via IAQDatabase
+    IAQDatabase::insert45MinSnapshotIfNeeded($data);
+
+    // 2. Legacy fallback file for backward compatibility
     $file = get45MinCacheFile();
     $intervalSec = 45 * 60; // 45 minutes = 2,700s
     $maxRecords = 1000;
@@ -424,7 +463,14 @@ function save45MinCacheRecord(array $data): void {
     @file_put_contents($file, json_encode($history, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
 }
 
-function get45MinCacheRecords(): array {
+function get45MinCacheRecords(int $limit = 500): array {
+    // 1. Try reading from Database
+    $dbSnapshots = IAQDatabase::get45MinSnapshots($limit);
+    if (!empty($dbSnapshots)) {
+        return $dbSnapshots;
+    }
+
+    // 2. Fallback to legacy file
     $file = get45MinCacheFile();
     if (!file_exists($file)) return [];
     $content = @file_get_contents($file);
@@ -483,6 +529,7 @@ function handleGetSpecData(): void {
             'co2'        => $co2,
             'rssi'       => $rssi,
             'lastUpdate' => $lastUpdate,
+            'serverTime' => getServerTimeMetadata(),
             'route'      => $r['usedRoute'] ?? 'UNKNOWN',
             'raw'        => $d,
             'history'    => getHistoryRecords(),
@@ -492,6 +539,9 @@ function handleGetSpecData(): void {
         saveToCache($cacheKey, $response);
         saveHistoryRecord($response);
         save45MinCacheRecord($response);
+
+        // Update database sync status
+        IAQDatabase::updateSyncStatus('site4_telemetry', 'OK', $r['usedRoute'] ?? 'UNKNOWN', $r['durationMs'] ?? 0);
 
         echo json_encode($response);
         return;
@@ -520,12 +570,16 @@ function handleGetSpecData(): void {
         'co2'        => $co2,
         'rssi'       => $rssi,
         'lastUpdate' => $lastUpdate,
+        'serverTime' => getServerTimeMetadata(),
         'fallback'   => true,
         'curlError'  => $r['error'] ?: 'Invalid JSON response from remote',
         'route'      => $r['usedRoute'] ?? 'FAILED',
         'history'    => getHistoryRecords(),
         'history45m' => $records45,
     ];
+
+    // Log fallback sync status
+    IAQDatabase::updateSyncStatus('site4_telemetry', 'FALLBACK', $r['usedRoute'] ?? 'FAILED', $r['durationMs'] ?? 0, $r['error'] ?: 'Fallback snapshot used');
 
     echo json_encode($response);
 }
@@ -570,7 +624,11 @@ function handleGetSiteData(): void {
         ];
     }
 
-    $response = ['ok' => true, 'data' => $records];
+    $response = [
+        'ok'         => true,
+        'data'       => $records,
+        'serverTime' => getServerTimeMetadata(),
+    ];
     saveToCache($cacheKey, $response);
     echo json_encode($response);
 }
@@ -695,16 +753,287 @@ function handleDiag(): void {
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 }
 
+/**
+ * 6. Clear all historical data and reset caches (?action=clearData)
+ */
+function handleClearData(): void {
+    $dbOk = IAQDatabase::resetAllData();
+
+    // Reset cache_45m_ict401.json to empty array
+    $file45 = get45MinCacheFile();
+    @file_put_contents($file45, json_encode([], JSON_PRETTY_PRINT));
+
+    // Clear runtime telemetry cache and route cache
+    clearAllCache();
+
+    // Clear legacy history file if present
+    $histFile = getHistoryFile();
+    if (file_exists($histFile)) {
+        @unlink($histFile);
+    }
+
+    echo json_encode([
+        'ok'         => $dbOk,
+        'message'    => 'เคลียร์ข้อมูลประวัติทั้งหมดสำเร็จ เริ่มบันทึกข้อมูลใหม่ตั้งแต่วันนี้ (' . date('Y-m-d') . ') อ้างอิงเวลาเซิร์ฟเวอร์',
+        'serverTime' => getServerTimeMetadata(),
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Helper to resolve start and end timestamps from date / range / preset parameters
+ */
+function resolveTimeRangeParams(): array {
+    $date   = trim($_GET['date']   ?? $_POST['date']   ?? '');
+    $start  = trim($_GET['start']  ?? $_POST['start']  ?? '');
+    $end    = trim($_GET['end']    ?? $_POST['end']    ?? '');
+    $preset = trim($_GET['preset'] ?? $_POST['preset'] ?? '');
+
+    $now = time();
+    $todayStr = date('Y-m-d');
+    $mode = 'range';
+    $displayLabel = '';
+    $selectedDate = '';
+
+    if (!empty($date)) {
+        // Single Day mode
+        $mode = 'day';
+        if ($date === 'today' || $date === $todayStr) {
+            $selectedDate = $todayStr;
+            $startTs = strtotime($todayStr . ' 00:00:00');
+            $endTs   = $now;
+            $displayLabel = 'วันนี้ (' . date('d/m/Y') . ')';
+        } else if ($date === 'yesterday') {
+            $selectedDate = date('Y-m-d', strtotime('-1 day'));
+            $startTs = strtotime($selectedDate . ' 00:00:00');
+            $endTs   = strtotime($selectedDate . ' 23:59:59');
+            $displayLabel = 'เมื่อวาน (' . date('d/m/Y', $startTs) . ')';
+        } else {
+            $selectedDate = $date;
+            $startTs = strtotime($date . ' 00:00:00');
+            if ($date === $todayStr) {
+                $endTs = $now;
+                $displayLabel = 'วันนี้ (' . date('d/m/Y', $startTs) . ')';
+            } else {
+                $endTs = strtotime($date . ' 23:59:59');
+                $displayLabel = 'วันที่ ' . date('d/m/Y', $startTs);
+            }
+        }
+    } else if (!empty($preset)) {
+        switch ($preset) {
+            case 'today':
+                $mode = 'day';
+                $selectedDate = $todayStr;
+                $startTs = strtotime($todayStr . ' 00:00:00');
+                $endTs   = $now;
+                $displayLabel = 'วันนี้ (' . date('d/m/Y') . ')';
+                break;
+            case 'yesterday':
+                $mode = 'day';
+                $selectedDate = date('Y-m-d', strtotime('-1 day'));
+                $startTs = strtotime($selectedDate . ' 00:00:00');
+                $endTs   = strtotime($selectedDate . ' 23:59:59');
+                $displayLabel = 'เมื่อวาน (' . date('d/m/Y', $startTs) . ')';
+                break;
+            case '1h':
+                $startTs = $now - 3600;
+                $endTs   = $now;
+                $displayLabel = '1 ชั่วโมงล่าสุด';
+                break;
+            case '6h':
+                $startTs = $now - 21600;
+                $endTs   = $now;
+                $displayLabel = '6 ชั่วโมงล่าสุด';
+                break;
+            case '24h':
+                $startTs = $now - 86400;
+                $endTs   = $now;
+                $displayLabel = '24 ชั่วโมงล่าสุด';
+                break;
+            case '7d':
+                $startTs = strtotime('-7 days 00:00:00');
+                $endTs   = $now;
+                $displayLabel = '7 วันล่าสุด';
+                break;
+            case '30d':
+                $startTs = strtotime('-30 days 00:00:00');
+                $endTs   = $now;
+                $displayLabel = '30 วันล่าสุด';
+                break;
+            case 'all':
+                $startTs = null;
+                $endTs   = $now;
+                $displayLabel = 'ทั้งหมดในระบบ';
+                break;
+            default:
+                $startTs = strtotime('-24 hours');
+                $endTs   = $now;
+                $displayLabel = '24 ชั่วโมงล่าสุด';
+                break;
+        }
+    } else {
+        // Custom Range (start and/or end)
+        if (!empty($start)) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) {
+                $startTs = strtotime($start . ' 00:00:00');
+            } else if (is_numeric($start)) {
+                $startTs = (int)$start;
+            } else {
+                $startTs = strtotime($start);
+            }
+        } else {
+            $startTs = strtotime('today 00:00:00');
+        }
+
+        if (!empty($end)) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
+                if ($end === $todayStr) {
+                    $endTs = $now;
+                } else {
+                    $endTs = strtotime($end . ' 23:59:59');
+                }
+            } else if (is_numeric($end)) {
+                $endTs = (int)$end;
+            } else {
+                $endTs = strtotime($end);
+            }
+        } else {
+            $endTs = $now;
+        }
+
+        if ($start === $end && preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) {
+            $mode = 'day';
+            $selectedDate = $start;
+            $displayLabel = 'วันที่ ' . date('d/m/Y', $startTs) . ($start === $todayStr ? ' (วันนี้)' : '');
+        } else {
+            $mode = 'range';
+            $displayLabel = date('d/m/Y', $startTs) . ' ถึง ' . date('d/m/Y', $endTs);
+        }
+    }
+
+    return [
+        'mode'         => $mode,
+        'date'         => $selectedDate,
+        'preset'       => $preset,
+        'startTs'      => $startTs,
+        'endTs'        => $endTs,
+        'displayLabel' => $displayLabel,
+    ];
+}
+
+/**
+ * 7. Get History by Day, Range, or Preset (?action=getHistoryRange)
+ */
+function handleGetHistoryRange(): void {
+    $siteId = $_GET['site'] ?? $_POST['site'] ?? '4';
+    $limit  = isset($_GET['limit']) ? (int)$_GET['limit'] : 2500;
+
+    $params = resolveTimeRangeParams();
+    $startTs = $params['startTs'];
+    $endTs   = $params['endTs'];
+
+    $records = IAQDatabase::getRecordsByRange($startTs, $endTs, $siteId, $limit);
+    $stats   = IAQDatabase::getStatisticsForRange($startTs, $endTs, $siteId);
+
+    echo json_encode([
+        'ok'           => true,
+        'site'         => $siteId,
+        'mode'         => $params['mode'],
+        'date'         => $params['date'],
+        'displayLabel' => $params['displayLabel'],
+        'range'        => [
+            'preset'   => $params['preset'] ?: ($params['mode'] === 'day' ? 'day' : 'custom'),
+            'startTs'  => $startTs,
+            'endTs'    => $endTs,
+            'startStr' => $startTs ? date('Y-m-d H:i:s', $startTs) : 'all',
+            'endStr'   => date('Y-m-d H:i:s', $endTs),
+        ],
+        'count'        => count($records),
+        'stats'        => $stats,
+        'records'      => $records,
+        'serverTime'   => getServerTimeMetadata(),
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * 8. Export CSV for specific Day or Range (?action=exportCsv)
+ */
+function handleExportCsv(): void {
+    $siteId = $_GET['site'] ?? $_POST['site'] ?? '4';
+    $params = resolveTimeRangeParams();
+    $startTs = $params['startTs'];
+    $endTs   = $params['endTs'];
+
+    $records = IAQDatabase::getRecordsByRange($startTs, $endTs, $siteId, 5000);
+
+    if ($params['mode'] === 'day' && !empty($params['date'])) {
+        $filename = sprintf('AIR_ICT401_%s.csv', str_replace('-', '', $params['date']));
+    } else {
+        $filename = sprintf('AIR_ICT401_%s_%s.csv',
+            $startTs ? date('Ymd', $startTs) : 'all',
+            date('Ymd', $endTs)
+        );
+    }
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    // UTF-8 BOM for Microsoft Excel in Thai
+    echo "\xEF\xBB\xBF";
+
+    $out = fopen('php://output', 'w');
+    fputcsv($out, [
+        'ID',
+        'เวลาเซ็นเซอร์ (Sensor Time)',
+        'เวลาเซิร์ฟเวอร์ (Server Time)',
+        'สถานที่/ห้อง (Site)',
+        'PM2.5 (µg/m³)',
+        'PM10 (µg/m³)',
+        'CO2 (ppm)',
+        'อุณหภูมิ (°C)',
+        'ความชื้น (%RH)',
+        'EVOC (ppb)',
+        'RSSI (dBm)',
+        'AI IAQ Score (0-100)',
+    ]);
+
+    foreach ($records as $r) {
+        fputcsv($out, [
+            $r['id'] ?? '',
+            $r['time'] ?? '',
+            isset($r['timestamp_sec']) ? date('Y-m-d H:i:s', $r['timestamp_sec']) : ($r['server_time'] ?? ''),
+            $r['site'] ?? 'Site 4 - ICT401',
+            $r['pm25'] ?? 0,
+            $r['pm10'] ?? 0,
+            $r['co2'] ?? 0,
+            $r['temp'] ?? 0,
+            $r['humid'] ?? 0,
+            $r['evoc'] ?? 0,
+            $r['rssi'] ?? '0',
+            $r['iaqScore'] ?? 0,
+        ]);
+    }
+
+    fclose($out);
+    exit;
+}
+
 // ---- Request Router ----
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
-// Support CLI testing (e.g. php proxy.php action=diag or php proxy.php getSpecData)
-if (php_sapi_name() === 'cli' && empty($action) && isset($argv[1])) {
-    if (strpos($argv[1], '=') !== false) {
-        parse_str($argv[1], $cliArgs);
-        $action = $cliArgs['action'] ?? '';
-    } else {
-        $action = $argv[1];
+// Support CLI testing (e.g. php proxy.php action=diag or php proxy.php action=getHistoryRange preset=24h)
+if (php_sapi_name() === 'cli' && isset($argv[1])) {
+    for ($i = 1; $i < count($argv); $i++) {
+        if (strpos($argv[$i], '=') !== false) {
+            parse_str($argv[$i], $cliArgs);
+            $_GET = array_merge($_GET, $cliArgs);
+        } else if (empty($action)) {
+            $action = $argv[$i];
+        }
+    }
+    if (empty($action) && isset($_GET['action'])) {
+        $action = $_GET['action'];
     }
 }
 
@@ -714,15 +1043,50 @@ switch ($action) {
     case 'logout':          handleLogout();       break;
     case 'getSpecData':     handleGetSpecData();  break;
     case 'getSiteData':     handleGetSiteData();  break;
-    case 'getHistory':      echo json_encode(['ok' => true, 'history' => getHistoryRecords()]); break;
-    case 'get45MinHistory': echo json_encode(['ok' => true, 'history45m' => get45MinCacheRecords()]); break;
+    case 'getServerTime':
+        echo json_encode(['ok' => true, 'serverTime' => getServerTimeMetadata()]);
+        break;
+    case 'getHistory':
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
+        echo json_encode([
+            'ok'         => true,
+            'history'    => getHistoryRecords($limit),
+            'serverTime' => getServerTimeMetadata(),
+        ]);
+        break;
+    case 'get45MinHistory':
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 500;
+        echo json_encode([
+            'ok'         => true,
+            'history45m' => get45MinCacheRecords($limit),
+            'serverTime' => getServerTimeMetadata(),
+        ]);
+        break;
+    case 'getHistoryRange':
+        handleGetHistoryRange();
+        break;
+    case 'exportCsv':
+        handleExportCsv();
+        break;
+    case 'getStats':
+        $range = $_GET['range'] ?? '24h';
+        echo json_encode([
+            'ok'         => true,
+            'stats'      => IAQDatabase::getStatistics($range),
+            'serverTime' => getServerTimeMetadata(),
+        ]);
+        break;
+    case 'dbDiag':
+        echo json_encode(IAQDatabase::getDiagnostics(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        break;
+    case 'clearData':       handleClearData();    break;
     case 'pushData':        handlePushData();     break;
     case 'diag':            handleDiag();         break;
     default:
         echo json_encode([
             'ok'    => false,
             'error' => 'Unknown action: ' . htmlspecialchars($action),
-            'hint'  => 'Available actions: login, checkSession, logout, getSpecData, getSiteData, getHistory, get45MinHistory, pushData, diag',
+            'hint'  => 'Available actions: login, checkSession, logout, getSpecData, getSiteData, getServerTime, getHistory, get45MinHistory, getHistoryRange, exportCsv, getStats, dbDiag, pushData, diag',
         ]);
         break;
 }
